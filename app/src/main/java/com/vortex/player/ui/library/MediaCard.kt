@@ -20,11 +20,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +42,7 @@ import coil.compose.AsyncImage
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.db.MediaStateEntity
 import com.vortex.player.ui.common.formatDuration
+import com.vortex.player.ui.common.rememberThumbnailRequest
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 
@@ -72,12 +78,27 @@ fun MediaCard(
                 )
         ) {
             if (entry.isVideo) {
+                var failed by remember(entry.uri) { mutableStateOf(false) }
                 AsyncImage(
-                    model = entry.uri,
+                    model = rememberThumbnailRequest(entry),
                     contentDescription = entry.title,
                     contentScale = ContentScale.Crop,
+                    onError = { failed = true },
+                    onSuccess = { failed = false },
                     modifier = Modifier.fillMaxSize()
                 )
+                // Sin esto, un vídeo cuya miniatura no se puede extraer es
+                // indistinguible de uno cuyo fotograma es negro de verdad.
+                if (failed) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Movie,
+                            contentDescription = null,
+                            tint = VortexPalette.Outline,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
             } else {
                 // El audio no tiene fotograma que mostrar: un glifo centrado evita
                 // una retícula llena de rectángulos vacíos.
@@ -253,7 +274,7 @@ fun ContinueCard(
                 .border(1.dp, VortexPalette.Neon.copy(alpha = 0.35f), VortexShapes.medium)
         ) {
             AsyncImage(
-                model = entry.uri,
+                model = rememberThumbnailRequest(entry),
                 contentDescription = entry.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()

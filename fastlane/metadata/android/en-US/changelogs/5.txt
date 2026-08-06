@@ -1,0 +1,11 @@
+Fixed black video thumbnails.
+
+• The frame was taken at second zero, and a great many real videos open with a fade-in or a dark intro. It now takes a frame further in (20% of the duration, with a 3 s floor and a 1 minute ceiling).
+• The cache key includes that timestamp, so updating regenerates thumbnails instead of keeping the black ones already stored.
+• If a thumbnail cannot be extracted, a film icon appears rather than a black rectangle indistinguishable from a failure.
+
+Download queue actions:
+• Empty the whole queue, with confirmation.
+• Cancel only pending downloads, keeping the history.
+• Retry every failed download at once.
+• Clear finished ones.

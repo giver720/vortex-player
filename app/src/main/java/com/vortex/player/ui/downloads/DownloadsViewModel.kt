@@ -209,7 +209,46 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearFinished() {
-        viewModelScope.launch { repository.clearFinished() }
+        viewModelScope.launch {
+            repository.clearFinished()
+            _message.value = "Historial limpiado"
+        }
+    }
+
+    val failedCount: StateFlow<Int> = repository.failedCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /**
+     * Vacía la cola entera. Se cancela primero lo que se esté descargando: borrar la fila
+     * sin parar el proceso dejaría a yt-dlp trabajando para nadie.
+     */
+    fun clearAll() {
+        viewModelScope.launch {
+            DownloadService.cancelCurrent(getApplication())
+            repository.clearAll()
+            _message.value = "Cola vaciada"
+        }
+    }
+
+    /** Quita lo pendiente y conserva el historial de lo ya terminado. */
+    fun cancelPending() {
+        viewModelScope.launch {
+            DownloadService.cancelCurrent(getApplication())
+            repository.clearPending()
+            _message.value = "Descargas pendientes canceladas"
+        }
+    }
+
+    fun retryAllFailed() {
+        viewModelScope.launch {
+            val count = repository.retryAllFailed()
+            if (count > 0) {
+                DownloadService.start(getApplication())
+                _message.value = "$count descargas de vuelta en la cola"
+            } else {
+                _message.value = "No hay descargas fallidas"
+            }
+        }
     }
 
     fun updateEngine() {

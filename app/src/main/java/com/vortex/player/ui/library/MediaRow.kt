@@ -34,6 +34,7 @@ import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.db.MediaStateEntity
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.common.formatSize
+import com.vortex.player.ui.common.rememberThumbnailRequest
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 
@@ -79,7 +80,7 @@ fun MediaRow(
         ) {
             if (entry.isVideo) {
                 AsyncImage(
-                    model = entry.uri,
+                    model = rememberThumbnailRequest(entry),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()

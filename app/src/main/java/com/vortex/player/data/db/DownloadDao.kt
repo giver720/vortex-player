@@ -53,6 +53,20 @@ interface DownloadDao {
     @Query("DELETE FROM downloads WHERE status IN ('COMPLETED','FAILED','CANCELLED')")
     suspend fun clearFinished()
 
+    /** Vacía la cola entera, historial incluido. */
+    @Query("DELETE FROM downloads")
+    suspend fun clearAll()
+
+    /** Quita lo que aún no ha terminado y deja intacto el historial. */
+    @Query("DELETE FROM downloads WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED')")
+    suspend fun clearPending()
+
+    @Query("SELECT * FROM downloads WHERE status IN ('FAILED','CANCELLED')")
+    suspend fun failedJobs(): List<DownloadEntity>
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('FAILED','CANCELLED')")
+    fun observeFailedCount(): Flow<Int>
+
     /**
      * Si el proceso muere a mitad, las descargas quedan colgadas en un estado activo.
      * Al arrancar se rescatan devolviéndolas a la cola.

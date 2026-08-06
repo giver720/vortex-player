@@ -1,0 +1,11 @@
+Corregidas las miniaturas de vídeo en negro.
+
+• Se extraía el fotograma del segundo cero, y muchísimos vídeos reales empiezan con un fundido o una cortinilla oscura. Ahora se toma un fotograma ya entrado el vídeo (un 20 % de su duración, con suelo de 3 s y techo de 1 minuto).
+• La clave de caché incluye ese instante, así que al actualizar se regeneran las miniaturas en lugar de seguir mostrando las negras guardadas.
+• Si la miniatura no se puede extraer, sale un icono de película en vez de un rectángulo negro indistinguible de un fallo.
+
+Ajustes de la cola de descargas:
+• Vaciar la cola entera, con confirmación.
+• Cancelar solo las pendientes conservando el historial.
+• Reintentar de golpe todas las fallidas.
+• Limpiar las terminadas.

@@ -113,6 +113,30 @@ class DownloadRepository(private val dao: DownloadDao) {
 
     suspend fun clearFinished() = dao.clearFinished()
 
+    suspend fun clearAll() = dao.clearAll()
+
+    suspend fun clearPending() = dao.clearPending()
+
+    val failedCount: Flow<Int> = dao.observeFailedCount()
+
+    /** Devuelve a la cola todo lo que falló o se canceló, conservando sus opciones. */
+    suspend fun retryAllFailed(): Int {
+        val failed = dao.failedJobs()
+        failed.forEach { entity ->
+            dao.update(
+                entity.copy(
+                    status = DownloadStatus.QUEUED,
+                    progress = 0f,
+                    etaSeconds = -1,
+                    statusLine = "",
+                    errorMessage = null,
+                    finishedAt = null
+                )
+            )
+        }
+        return failed.size
+    }
+
     /** Convierte una fila guardada de vuelta en la petición que la originó. */
     fun DownloadEntity.toRequest(): DownloadRequest = DownloadRequest(
         url = url,

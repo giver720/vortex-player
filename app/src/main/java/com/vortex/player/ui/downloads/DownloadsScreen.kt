@@ -27,17 +27,25 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -86,6 +94,9 @@ fun DownloadsScreen(
     val isSpotify by viewModel.isSpotifyLink.collectAsStateWithLifecycle()
     val resolving by viewModel.resolving.collectAsStateWithLifecycle()
     val partialWarning by viewModel.partialWarning.collectAsStateWithLifecycle()
+    val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
+
+    var confirmClearAll by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         if (message != null) {
@@ -288,14 +299,15 @@ fun DownloadsScreen(
                         color = VortexPalette.TextLow,
                         modifier = Modifier.weight(1f)
                     )
-                    if (downloads.any { it.status.isTerminal }) {
-                        Text(
-                            text = "LIMPIAR",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = VortexPalette.Magenta,
-                            modifier = Modifier
-                                .clickable(onClick = viewModel::clearFinished)
-                                .padding(6.dp)
+                    if (downloads.isNotEmpty()) {
+                        QueueMenu(
+                            hasFinished = downloads.any { it.status.isTerminal },
+                            hasPending = downloads.any { !it.status.isTerminal },
+                            failedCount = failedCount,
+                            onRetryFailed = viewModel::retryAllFailed,
+                            onCancelPending = viewModel::cancelPending,
+                            onClearFinished = viewModel::clearFinished,
+                            onClearAll = { confirmClearAll = true }
                         )
                     }
                 }
@@ -324,6 +336,41 @@ fun DownloadsScreen(
             }
         }
 
+        if (confirmClearAll) {
+            AlertDialog(
+                onDismissRequest = { confirmClearAll = false },
+                containerColor = VortexPalette.GraphiteRaised,
+                titleContentColor = VortexPalette.TextHigh,
+                textContentColor = VortexPalette.TextMid,
+                title = {
+                    Text("VACIAR LA COLA", style = MaterialTheme.typography.labelLarge)
+                },
+                text = {
+                    Text(
+                        text = "Se quitarán las ${downloads.size} entradas, incluidas las " +
+                            "que estén descargando ahora. Los archivos ya guardados en el " +
+                            "destino no se tocan.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmClearAll = false
+                            viewModel.clearAll()
+                        }
+                    ) {
+                        Text("VACIAR", color = VortexPalette.Magenta)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmClearAll = false }) {
+                        Text("CANCELAR", color = VortexPalette.TextLow)
+                    }
+                }
+            )
+        }
+
         message?.let { text ->
             Text(
                 text = text,
@@ -343,6 +390,85 @@ fun DownloadsScreen(
  * Explica qué va a pasar con un enlace de Spotify. Conviene decirlo: el usuario espera
  * que el audio salga de Spotify, y lo que ocurre es otra cosa.
  */
+/** Acciones que afectan a la cola entera, agrupadas para no llenar la cabecera. */
+@Composable
+private fun QueueMenu(
+    hasFinished: Boolean,
+    hasPending: Boolean,
+    failedCount: Int,
+    onRetryFailed: () -> Unit,
+    onCancelPending: () -> Unit,
+    onClearFinished: () -> Unit,
+    onClearAll: () -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            modifier = Modifier
+                .clickable { open = true }
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "GESTIONAR",
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextMid
+            )
+            Icon(
+                Icons.Filled.MoreVert,
+                contentDescription = "Acciones de la cola",
+                tint = VortexPalette.TextMid,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = VortexPalette.GraphiteRaised
+        ) {
+            if (failedCount > 0) {
+                QueueMenuItem(
+                    label = "Reintentar fallidas ($failedCount)",
+                    tint = VortexPalette.Cyan
+                ) { open = false; onRetryFailed() }
+            }
+            if (hasPending) {
+                QueueMenuItem(label = "Cancelar pendientes") {
+                    open = false
+                    onCancelPending()
+                }
+            }
+            if (hasFinished) {
+                QueueMenuItem(label = "Limpiar terminadas") {
+                    open = false
+                    onClearFinished()
+                }
+            }
+            QueueMenuItem(label = "Vaciar la cola entera", tint = VortexPalette.Magenta) {
+                open = false
+                onClearAll()
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueMenuItem(
+    label: String,
+    tint: androidx.compose.ui.graphics.Color = VortexPalette.TextHigh,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = {
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = tint)
+        },
+        onClick = onClick
+    )
+}
+
 @Composable
 private fun SpotifyNotice(resolving: Boolean) {
     Column(
