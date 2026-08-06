@@ -27,6 +27,12 @@ import com.vortex.player.ui.library.LibraryScreen
 import com.vortex.player.ui.library.LibraryViewModel
 import com.vortex.player.ui.player.PlayerActivity
 import com.vortex.player.ui.theme.VortexTheme
+import com.vortex.player.ui.update.UpdateBanner
+import com.vortex.player.ui.update.UpdateDialog
+import com.vortex.player.ui.update.UpdateStage
+import com.vortex.player.ui.update.UpdateViewModel
+import com.vortex.player.update.UpdateInstaller
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private enum class Screen { LIBRARY, DOWNLOADS }
 
@@ -34,6 +40,7 @@ class MainActivity : ComponentActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
     private val downloadsViewModel: DownloadsViewModel by viewModels()
+    private val updateViewModel: UpdateViewModel by viewModels()
 
     /**
      * El permiso de superposición no se concede desde un diálogo normal: hay que mandar
@@ -68,6 +75,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    val updateStage by updateViewModel.stage.collectAsStateWithLifecycle()
+                    val bannerVisible by updateViewModel.bannerVisible.collectAsStateWithLifecycle()
+
                     when (screen) {
                         Screen.LIBRARY -> LibraryScreen(
                             viewModel = libraryViewModel,
@@ -75,7 +85,19 @@ class MainActivity : ComponentActivity() {
                                 startActivity(Intent(this, PlayerActivity::class.java))
                             },
                             onRequestPopup = ::requestPopup,
-                            onOpenDownloads = { screen = Screen.DOWNLOADS }
+                            onOpenDownloads = { screen = Screen.DOWNLOADS },
+                            appVersion = updateViewModel.currentVersion,
+                            onCheckUpdates = { updateViewModel.check() },
+                            updateBanner = {
+                                val available = updateStage as? UpdateStage.Available
+                                if (bannerVisible && available != null) {
+                                    UpdateBanner(
+                                        versionName = available.release.versionName,
+                                        onOpen = { updateViewModel.showDialogForAvailable() },
+                                        onDismiss = updateViewModel::dismissBanner
+                                    )
+                                }
+                            }
                         )
 
                         Screen.DOWNLOADS -> {
@@ -87,9 +109,30 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+
+                    // El banner sólo avisa; el diálogo es el que lleva el proceso entero,
+                    // así que vive fuera del `when` para sobrevivir a un cambio de pantalla.
+                    UpdateDialog(
+                        stage = updateStage,
+                        currentVersion = updateViewModel.currentVersion,
+                        onDownload = updateViewModel::download,
+                        onInstall = {
+                            if (!updateViewModel.install()) askForInstallPermission()
+                        },
+                        onSkip = updateViewModel::skipThisVersion,
+                        onDismiss = updateViewModel::dismissDialog
+                    )
                 }
             }
         }
+    }
+
+    /**
+     * Android exige autorizar la app como origen de instalación antes de dejarla instalar
+     * un APK. Al volver de Ajustes, el usuario sólo tiene que pulsar Instalar de nuevo.
+     */
+    private fun askForInstallPermission() {
+        runCatching { startActivity(UpdateInstaller.unknownSourcesIntent(this)) }
     }
 
     private fun requestPopup() {

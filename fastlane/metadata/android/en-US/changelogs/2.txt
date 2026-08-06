@@ -1,0 +1,15 @@
+Fixed the bug that made playback stop on its own.
+
+• Music and audio-only mode no longer stop after two minutes. The media session was never registered with the service, so Android never treated it as foreground and killed it for being idle.
+
+A much more complete library:
+• Navigable folder tree with collapsible branches, cumulative counts and breadcrumbs. Chains of empty folders are merged into a single row.
+• Unified search across file name, folder and path, with grouped results and the matching fragment highlighted.
+• Sort by date, name, duration, size or resolution, and switch between grid and compact list. Remembered across sessions.
+• Multi-select on long press: play, favourite, add to playlist, share or delete in bulk.
+• User playlists and a Favourites tab.
+
+Other improvements:
+• In-app updates: checks the repository releases, downloads the APK for your architecture and installs it.
+• VLC-style aspect ratio picker with forced ratios and pinch zoom.
+• Fixed stretched video and the black frame when opening the player.

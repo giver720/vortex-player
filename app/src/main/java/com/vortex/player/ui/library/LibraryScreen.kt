@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
@@ -73,7 +74,11 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     onOpenPlayer: () -> Unit,
     onRequestPopup: () -> Unit,
-    onOpenDownloads: () -> Unit
+    onOpenDownloads: () -> Unit,
+    appVersion: String = "",
+    onCheckUpdates: () -> Unit = {},
+    /** Aviso de actualización, si lo hay. Se pinta bajo la cabecera. */
+    updateBanner: @Composable () -> Unit = {}
 ) {
     val permissions = rememberMultiplePermissionsState(mediaPermissions())
     val library by viewModel.library.collectAsStateWithLifecycle()
@@ -149,8 +154,11 @@ fun LibraryScreen(
                 VortexHeader(
                     onSearch = viewModel::openSearch,
                     onRefresh = viewModel::refresh,
-                    onOpenDownloads = onOpenDownloads
+                    onOpenDownloads = onOpenDownloads,
+                    appVersion = appVersion,
+                    onCheckUpdates = onCheckUpdates
                 )
+                updateBanner()
             }
 
             if (!permissions.allPermissionsGranted) {
@@ -398,8 +406,12 @@ private fun mediaPermissions(): List<String> =
 private fun VortexHeader(
     onSearch: () -> Unit,
     onRefresh: () -> Unit,
-    onOpenDownloads: () -> Unit
+    onOpenDownloads: () -> Unit,
+    appVersion: String,
+    onCheckUpdates: () -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -423,6 +435,45 @@ private fun VortexHeader(
         }
         IconButton(onClick = onRefresh) {
             Icon(Icons.Filled.Refresh, contentDescription = "Reescanear", tint = VortexPalette.TextMid)
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "Más opciones",
+                    tint = VortexPalette.TextMid
+                )
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+                containerColor = VortexPalette.GraphiteRaised
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "Buscar actualizaciones",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = VortexPalette.TextHigh
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onCheckUpdates()
+                    }
+                )
+                DropdownMenuItem(
+                    enabled = false,
+                    text = {
+                        Text(
+                            "Versión $appVersion",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VortexPalette.TextLow
+                        )
+                    },
+                    onClick = {}
+                )
+            }
         }
     }
 }

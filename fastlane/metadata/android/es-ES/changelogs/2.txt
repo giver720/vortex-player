@@ -1,0 +1,15 @@
+Corregido el fallo por el que la reproducción se paraba sola.
+
+• La música y el modo solo-audio ya no se detienen a los dos minutos. La sesión multimedia no llegaba a registrarse en el servicio, así que Android nunca lo consideraba en primer plano y lo mataba por inactividad.
+
+Biblioteca mucho más completa:
+• Árbol de carpetas navegable, con ramas plegables, recuento acumulado y migas de pan. Las cadenas de carpetas vacías se funden en una sola fila.
+• Búsqueda unificada por nombre, carpeta y ruta, con resultados agrupados y el fragmento coincidente resaltado.
+• Ordenar por fecha, nombre, duración, tamaño o resolución, y alternar entre rejilla y lista compacta. Se recuerda entre sesiones.
+• Selección múltiple con pulsación larga: reproducir, marcar favoritos, añadir a lista, compartir o eliminar en bloque.
+• Listas de reproducción propias y pestaña de Favoritos.
+
+Otras mejoras:
+• Actualización desde la app: comprueba las publicaciones del repositorio, descarga el APK de tu arquitectura y lo instala.
+• Selector de relación de aspecto al estilo VLC, con relaciones forzadas y zoom por pellizco.
+• Corregido el vídeo que salía estirado y el fotograma en negro al abrir el reproductor.
