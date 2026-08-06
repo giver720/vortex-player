@@ -3,6 +3,9 @@ package com.vortex.player.data
 import android.content.Context
 import com.vortex.player.data.db.MediaStateDao
 import com.vortex.player.data.db.MediaStateEntity
+import com.vortex.player.data.db.PlaylistDao
+import com.vortex.player.data.db.PlaylistEntity
+import com.vortex.player.data.db.PlaylistItemEntity
 import com.vortex.player.data.db.VortexDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +35,16 @@ data class LibraryState(
             .sortedByDescending { it.entries.size }
 
     /**
+     * Jerarquía de carpetas. Se calcula una sola vez por instantánea de biblioteca:
+     * recorrer miles de rutas en cada recomposición se notaría al desplazar la lista.
+     */
+    val folderTree: FolderNode by lazy { buildFolderTree(entries) }
+
+    private val byUri: Map<String, MediaEntry> by lazy { entries.associateBy { it.uri.toString() } }
+
+    fun entryFor(uri: String): MediaEntry? = byUri[uri]
+
+    /**
      * "Continuar viendo": lo empezado y no terminado, lo más reciente primero.
      * Es la lista que más se usa en un reproductor y la que VLC esconde.
      */
@@ -47,9 +60,16 @@ data class LibraryState(
     fun stateFor(entry: MediaEntry): MediaStateEntity? = states[entry.uri.toString()]
 }
 
+/** Una lista de reproducción junto a su contenido, que es como la consume la interfaz. */
+data class PlaylistWithItems(
+    val playlist: PlaylistEntity,
+    val items: List<PlaylistItemEntity>
+)
+
 class MediaRepository(
     private val context: Context,
     private val dao: MediaStateDao,
+    private val playlistDao: PlaylistDao,
     private val scanner: MediaScanner = MediaScanner(context)
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -64,8 +84,63 @@ class MediaRepository(
             )
         }.stateIn(scope, SharingStarted.Eagerly, LibraryState())
 
+    val playlists: StateFlow<List<PlaylistWithItems>> =
+        combine(
+            playlistDao.observePlaylists(),
+            playlistDao.observeAllItems()
+        ) { lists, items ->
+            val grouped = items.groupBy { it.playlistId }
+            lists.map { list ->
+                PlaylistWithItems(list, grouped[list.id].orEmpty().sortedBy { it.position })
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
     fun refresh() {
         scope.launch { scanned.value = scanner.scanAll() }
+    }
+
+    // ------------------------------------------------------------ listas
+
+    fun createPlaylist(name: String, initial: List<MediaEntry> = emptyList()) {
+        scope.launch {
+            val id = playlistDao.insertPlaylist(PlaylistEntity(name = name.trim()))
+            if (initial.isNotEmpty()) {
+                playlistDao.append(id, initial.map { it.uri.toString() to it.title })
+            }
+        }
+    }
+
+    fun addToPlaylist(playlistId: Long, entries: List<MediaEntry>) {
+        scope.launch {
+            playlistDao.append(playlistId, entries.map { it.uri.toString() to it.title })
+        }
+    }
+
+    fun removeFromPlaylist(playlistId: Long, uri: String) {
+        scope.launch { playlistDao.removeItem(playlistId, uri) }
+    }
+
+    fun deletePlaylist(playlistId: Long) {
+        scope.launch { playlistDao.deletePlaylist(playlistId) }
+    }
+
+    fun renamePlaylist(playlistId: Long, name: String) {
+        scope.launch { playlistDao.rename(playlistId, name.trim()) }
+    }
+
+    fun reorderPlaylist(playlistId: Long, orderedUris: List<String>) {
+        scope.launch { playlistDao.reorder(playlistId, orderedUris) }
+    }
+
+    fun setFavorite(uri: String, favorite: Boolean) {
+        scope.launch {
+            val current = dao.get(uri)
+            if (current == null) {
+                dao.upsert(MediaStateEntity(uri = uri, isFavorite = favorite))
+            } else if (current.isFavorite != favorite) {
+                dao.upsert(current.copy(isFavorite = favorite))
+            }
+        }
     }
 
     fun savePosition(uri: String, positionMs: Long, durationMs: Long) {
@@ -132,7 +207,8 @@ class MediaRepository(
             instance ?: synchronized(this) {
                 instance ?: MediaRepository(
                     context.applicationContext,
-                    VortexDatabase.get(context).mediaStateDao()
+                    VortexDatabase.get(context).mediaStateDao(),
+                    VortexDatabase.get(context).playlistDao()
                 ).also { instance = it }
             }
     }

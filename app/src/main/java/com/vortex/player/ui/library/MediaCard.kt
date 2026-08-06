@@ -1,8 +1,10 @@
 package com.vortex.player.ui.library
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
@@ -41,18 +44,20 @@ import com.vortex.player.ui.theme.VortexShapes
  * Tarjeta de la retícula. La miniatura manda; los datos técnicos (resolución, duración)
  * van en cápsulas monoespaciadas para que se lean como telemetría y no compitan con el título.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaCard(
     entry: MediaEntry,
     state: MediaStateEntity?,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
+    selected: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .clip(VortexShapes.medium)
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Box(
             modifier = Modifier
@@ -60,7 +65,11 @@ fun MediaCard(
                 .aspectRatio(16f / 9f)
                 .clip(VortexShapes.medium)
                 .background(VortexPalette.GraphiteRaised)
-                .border(0.5.dp, VortexPalette.Outline, VortexShapes.medium)
+                .border(
+                    width = if (selected) 2.dp else 0.5.dp,
+                    color = if (selected) VortexPalette.Neon else VortexPalette.Outline,
+                    shape = VortexShapes.medium
+                )
         ) {
             if (entry.isVideo) {
                 AsyncImage(
@@ -138,6 +147,22 @@ fun MediaCard(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(6.dp)
+                )
+            }
+
+            if (selected) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(VortexPalette.Neon.copy(alpha = 0.18f))
+                )
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = "Seleccionado",
+                    tint = VortexPalette.Neon,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(30.dp)
                 )
             }
         }

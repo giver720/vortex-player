@@ -2,9 +2,13 @@ package com.vortex.player.ui.library
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,19 +24,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,14 +54,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.vortex.player.data.LibraryState
 import com.vortex.player.data.MediaEntry
-import com.vortex.player.ui.common.formatDuration
+import com.vortex.player.data.SortField
+import com.vortex.player.data.ViewMode
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -67,23 +77,81 @@ fun LibraryScreen(
 ) {
     val permissions = rememberMultiplePermissionsState(mediaPermissions())
     val library by viewModel.library.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val tab by viewModel.tab.collectAsStateWithLifecycle()
-    val query by viewModel.query.collectAsStateWithLifecycle()
     val openFolder by viewModel.openFolder.collectAsStateWithLifecycle()
+    val openPlaylist by viewModel.openPlaylist.collectAsStateWithLifecycle()
+    val expanded by viewModel.expanded.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val searchOpen by viewModel.searchOpen.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val results by viewModel.results.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val deleteRequest by viewModel.deleteRequest.collectAsStateWithLifecycle()
 
-    // El escaneo arranca en cuanto hay permiso, sin botón de por medio.
+    var showPlaylistDialog by remember { mutableStateOf(false) }
+
+    // El borrado lo confirma el sistema con su propio diálogo; aquí sólo se lanza y se
+    // espera el resultado para refrescar la biblioteca.
+    val deleteLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { viewModel.onDeleteResolved() }
+
+    LaunchedEffect(deleteRequest) {
+        deleteRequest?.let { sender ->
+            viewModel.consumeDeleteRequest()
+            runCatching {
+                deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            }
+        }
+    }
+
+    LaunchedEffect(message) {
+        if (message != null) {
+            kotlinx.coroutines.delay(2_400)
+            viewModel.consumeMessage()
+        }
+    }
+
     LaunchedEffect(permissions.allPermissionsGranted) {
         if (permissions.allPermissionsGranted) viewModel.refresh()
     }
 
+    val visible = viewModel.visibleEntries(library)
+
+    BackHandler(
+        enabled = selection.isNotEmpty() || openFolder != null || openPlaylist != null || searchOpen
+    ) {
+        when {
+            searchOpen -> viewModel.closeSearch()
+            selection.isNotEmpty() -> viewModel.clearSelection()
+            openFolder != null -> viewModel.openFolder(null)
+            openPlaylist != null -> viewModel.openPlaylist(null)
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(VortexPalette.Graphite)) {
         Column(Modifier.fillMaxSize()) {
-            VortexHeader(
-                query = query,
-                onQueryChange = viewModel::setQuery,
-                onRefresh = viewModel::refresh,
-                onOpenDownloads = onOpenDownloads
-            )
+
+            if (selection.isNotEmpty()) {
+                SelectionBar(
+                    count = selection.size,
+                    onClose = viewModel::clearSelection,
+                    onSelectAll = { viewModel.selectAll(visible) },
+                    onQueue = viewModel::queueSelection,
+                    onFavorite = viewModel::favoriteSelection,
+                    onAddToPlaylist = { showPlaylistDialog = true },
+                    onShare = viewModel::shareSelection,
+                    onDelete = viewModel::deleteSelection
+                )
+            } else {
+                VortexHeader(
+                    onSearch = viewModel::openSearch,
+                    onRefresh = viewModel::refresh,
+                    onOpenDownloads = onOpenDownloads
+                )
+            }
 
             if (!permissions.allPermissionsGranted) {
                 PermissionGate(onGrant = { permissions.launchMultiplePermissionRequest() })
@@ -92,67 +160,83 @@ fun LibraryScreen(
 
             TabStrip(selected = tab, onSelect = viewModel::selectTab)
 
-            val visible = viewModel.visibleEntries(library)
-            val showFolderList = tab == LibraryTab.FOLDERS && openFolder == null
+            val showingTree = tab == LibraryTab.FOLDERS && openFolder == null
+            val showingPlaylistIndex = tab == LibraryTab.PLAYLISTS && openPlaylist == null
+
+            if (!showingTree && !showingPlaylistIndex) {
+                SortAndViewBar(
+                    sortField = prefs.sortField,
+                    descending = prefs.descending,
+                    viewMode = prefs.viewMode,
+                    sortEnabled = !viewModel.playlistKeepsOrder(),
+                    count = visible.size,
+                    onSort = viewModel::setSort,
+                    onToggleView = viewModel::toggleViewMode
+                )
+            }
+
+            val bottomPadding = 108.dp +
+                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
             when {
                 library.loading -> LoadingState()
 
-                showFolderList -> FolderGrid(
-                    folders = library.folders.map { it.path to it.name to it.entries.size },
-                    onOpen = viewModel::openFolder
+                showingTree -> FolderTreeView(
+                    root = library.folderTree,
+                    expanded = expanded,
+                    onToggleBranch = viewModel::toggleBranch,
+                    onOpenFolder = { viewModel.openFolder(it) },
+                    contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding)
                 )
 
-                visible.isEmpty() -> EmptyState(hasQuery = query.isNotBlank())
+                showingPlaylistIndex -> PlaylistsIndex(
+                    playlists = playlists,
+                    favoritesCount = library.favorites.size,
+                    onOpen = viewModel::openPlaylist,
+                    onDelete = viewModel::deletePlaylist,
+                    onCreate = { showPlaylistDialog = true },
+                    contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding)
+                )
 
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Adaptive(168.dp),
-                    contentPadding = PaddingValues(
-                        start = 12.dp,
-                        end = 12.dp,
-                        top = 8.dp,
-                        // Deja aire para que el dock no tape la última fila.
-                        bottom = 108.dp + WindowInsets.navigationBars.asPaddingValues()
-                            .calculateBottomPadding()
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    val continueList = library.continueWatching
-                    if (tab == LibraryTab.ALL && continueList.isNotEmpty() && query.isBlank()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionTitle("CONTINUAR")
-                        }
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                items(continueList, key = { it.first.uri.toString() }) { (entry, state) ->
-                                    ContinueCard(
-                                        entry = entry,
-                                        state = state,
-                                        onClick = {
-                                            viewModel.play(entry, continueList.map { it.first })
-                                            onOpenPlayer()
-                                        },
-                                        modifier = Modifier.width(230.dp)
-                                    )
-                                }
+                else -> Column(Modifier.fillMaxSize()) {
+                    if (tab == LibraryTab.FOLDERS && openFolder != null) {
+                        FolderBreadcrumbs(
+                            trail = library.folderTree.trailTo(openFolder!!),
+                            onNavigate = viewModel::openFolder
+                        )
+                    }
+                    if (tab == LibraryTab.PLAYLISTS && openPlaylist != null) {
+                        PlaylistHeader(
+                            name = if (openPlaylist == LibraryViewModel.FAVORITES_ID) {
+                                "Favoritos"
+                            } else {
+                                playlists.firstOrNull { it.playlist.id == openPlaylist }
+                                    ?.playlist?.name.orEmpty()
+                            },
+                            count = visible.size,
+                            onBack = { viewModel.openPlaylist(null) },
+                            onPlayAll = {
+                                visible.firstOrNull()?.let { viewModel.play(it, visible) }
                             }
-                        }
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionTitle("BIBLIOTECA · ${visible.size}")
-                        }
+                        )
                     }
 
-                    items(visible, key = { it.uri.toString() }) { entry ->
-                        MediaCard(
-                            entry = entry,
-                            state = library.stateFor(entry),
-                            onClick = {
+                    if (visible.isEmpty()) {
+                        EmptyState()
+                    } else {
+                        MediaCollection(
+                            entries = visible,
+                            library = library,
+                            viewMode = prefs.viewMode,
+                            selection = selection,
+                            selectionActive = selection.isNotEmpty(),
+                            showContinueRow = tab == LibraryTab.ALL,
+                            bottomPadding = bottomPadding,
+                            onOpen = { entry ->
                                 viewModel.play(entry, visible)
                                 onOpenPlayer()
                             },
-                            onLongClick = { viewModel.toggleFavorite(entry) }
+                            onToggleSelect = viewModel::toggleSelection
                         )
                     }
                 }
@@ -171,6 +255,135 @@ fun LibraryScreen(
                         .calculateBottomPadding()
                 )
         )
+
+        message?.let { text ->
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = VortexPalette.Graphite,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 120.dp)
+                    .background(VortexPalette.Neon, VortexShapes.small)
+                    .padding(horizontal = 14.dp, vertical = 9.dp)
+            )
+        }
+    }
+
+    if (searchOpen) {
+        SearchOverlay(
+            query = query,
+            results = results,
+            stateFor = { library.stateFor(it) },
+            onQueryChange = viewModel::setQuery,
+            onClose = viewModel::closeSearch,
+            onOpenFolder = viewModel::revealFolder,
+            onPlay = { entry, list ->
+                viewModel.play(entry, list)
+                viewModel.closeSearch()
+                onOpenPlayer()
+            }
+        )
+    }
+
+    if (showPlaylistDialog) {
+        AddToPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { showPlaylistDialog = false },
+            onPick = { id ->
+                viewModel.addSelectionToPlaylist(id)
+                showPlaylistDialog = false
+            },
+            onCreate = { name ->
+                viewModel.createPlaylist(name, withSelection = selection.isNotEmpty())
+                showPlaylistDialog = false
+            }
+        )
+    }
+}
+
+/**
+ * Rejilla o lista según la preferencia, con el carrusel de "continuar" encima cuando
+ * procede. Ambas vistas comparten el mismo tratamiento de selección.
+ */
+@Composable
+private fun MediaCollection(
+    entries: List<MediaEntry>,
+    library: LibraryState,
+    viewMode: ViewMode,
+    selection: Set<String>,
+    selectionActive: Boolean,
+    showContinueRow: Boolean,
+    bottomPadding: androidx.compose.ui.unit.Dp,
+    onOpen: (MediaEntry) -> Unit,
+    onToggleSelect: (MediaEntry) -> Unit
+) {
+    val continueList = if (showContinueRow) library.continueWatching else emptyList()
+
+    // Con la selección activa, un toque simple selecciona en vez de reproducir: si no,
+    // sería facilísimo lanzar un vídeo por error mientras marcas cosas.
+    val handleClick: (MediaEntry) -> Unit = { entry ->
+        if (selectionActive) onToggleSelect(entry) else onOpen(entry)
+    }
+
+    if (viewMode == ViewMode.LIST) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding)
+        ) {
+            items(entries, key = { it.uri.toString() }) { entry ->
+                MediaRow(
+                    entry = entry,
+                    state = library.stateFor(entry),
+                    selected = entry.uri.toString() in selection,
+                    onClick = { handleClick(entry) },
+                    onLongClick = { onToggleSelect(entry) }
+                )
+            }
+        }
+        return
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(168.dp),
+        contentPadding = PaddingValues(
+            start = 12.dp,
+            end = 12.dp,
+            top = 4.dp,
+            bottom = bottomPadding
+        ),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        if (continueList.isNotEmpty() && !selectionActive) {
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle("CONTINUAR") }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(continueList, key = { it.first.uri.toString() }) { (entry, state) ->
+                        ContinueCard(
+                            entry = entry,
+                            state = state,
+                            onClick = { onOpen(entry) },
+                            modifier = Modifier.width(230.dp)
+                        )
+                    }
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SectionTitle("BIBLIOTECA · ${entries.size}")
+            }
+        }
+
+        items(entries, key = { it.uri.toString() }) { entry ->
+            MediaCard(
+                entry = entry,
+                state = library.stateFor(entry),
+                selected = entry.uri.toString() in selection,
+                onClick = { handleClick(entry) },
+                onLongClick = { onToggleSelect(entry) }
+            )
+        }
     }
 }
 
@@ -183,13 +396,10 @@ private fun mediaPermissions(): List<String> =
 
 @Composable
 private fun VortexHeader(
-    query: String,
-    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
     onRefresh: () -> Unit,
     onOpenDownloads: () -> Unit
 ) {
-    var searching by remember { mutableStateOf(false) }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -199,47 +409,17 @@ private fun VortexHeader(
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         VortexMark(modifier = Modifier.size(30.dp), spinning = false, strokeWidth = 2.5.dp)
-
-        if (searching) {
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = VortexPalette.TextHigh),
-                cursorBrush = SolidColor(VortexPalette.Neon),
-                modifier = Modifier
-                    .weight(1f)
-                    .background(VortexPalette.GraphiteRaised, VortexShapes.small)
-                    .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
-                    .padding(horizontal = 10.dp, vertical = 8.dp)
-            )
-        } else {
-            Text(
-                text = "VÓRTEX",
-                style = MaterialTheme.typography.labelLarge,
-                color = VortexPalette.TextHigh,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        IconButton(
-            onClick = {
-                searching = !searching
-                if (!searching) onQueryChange("")
-            }
-        ) {
-            Icon(
-                Icons.Filled.Search,
-                contentDescription = "Buscar",
-                tint = if (searching) VortexPalette.Neon else VortexPalette.TextMid
-            )
+        Text(
+            text = "VÓRTEX",
+            style = MaterialTheme.typography.labelLarge,
+            color = VortexPalette.TextHigh,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onSearch) {
+            Icon(Icons.Filled.Search, contentDescription = "Buscar", tint = VortexPalette.TextMid)
         }
         IconButton(onClick = onOpenDownloads) {
-            Icon(
-                Icons.Filled.Download,
-                contentDescription = "Descargas",
-                tint = VortexPalette.Neon
-            )
+            Icon(Icons.Filled.Download, contentDescription = "Descargas", tint = VortexPalette.Neon)
         }
         IconButton(onClick = onRefresh) {
             Icon(Icons.Filled.Refresh, contentDescription = "Reescanear", tint = VortexPalette.TextMid)
@@ -247,10 +427,6 @@ private fun VortexHeader(
     }
 }
 
-/**
- * Selector de pestañas con subrayado de neón. Se usa una barra bajo el rótulo en vez de
- * un fondo relleno para no introducir más superficies claras en un tema tan oscuro.
- */
 @Composable
 private fun TabStrip(
     selected: LibraryTab,
@@ -259,6 +435,7 @@ private fun TabStrip(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -285,6 +462,102 @@ private fun TabStrip(
     }
 }
 
+/** Criterio de orden y conmutador rejilla/lista. */
+@Composable
+private fun SortAndViewBar(
+    sortField: SortField,
+    descending: Boolean,
+    viewMode: ViewMode,
+    sortEnabled: Boolean,
+    count: Int,
+    onSort: (SortField) -> Unit,
+    onToggleView: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.weight(1f)
+        )
+
+        if (sortEnabled) {
+            Box {
+                Row(
+                    modifier = Modifier
+                        .clickable { menuOpen = true }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.SwapVert,
+                        contentDescription = "Ordenar",
+                        tint = VortexPalette.TextMid,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(
+                        text = sortField.label + if (descending) " ↓" else " ↑",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VortexPalette.TextMid,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                    containerColor = VortexPalette.GraphiteRaised
+                ) {
+                    SortField.entries.forEach { field ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = field.label +
+                                        if (field == sortField) {
+                                            if (descending) "  ↓" else "  ↑"
+                                        } else {
+                                            ""
+                                        },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (field == sortField) {
+                                        VortexPalette.Neon
+                                    } else {
+                                        VortexPalette.TextMid
+                                    }
+                                )
+                            },
+                            onClick = {
+                                onSort(field)
+                                menuOpen = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        IconButton(onClick = onToggleView) {
+            Icon(
+                imageVector = if (viewMode == ViewMode.GRID) {
+                    Icons.AutoMirrored.Filled.List
+                } else {
+                    Icons.Filled.GridView
+                },
+                contentDescription = "Cambiar vista",
+                tint = VortexPalette.TextMid
+            )
+        }
+    }
+}
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -293,49 +566,6 @@ private fun SectionTitle(text: String) {
         color = VortexPalette.TextLow,
         modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
     )
-}
-
-@Composable
-private fun FolderGrid(
-    folders: List<Pair<Pair<String, String>, Int>>,
-    onOpen: (String) -> Unit
-) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(168.dp),
-        contentPadding = PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        items(folders, key = { it.first.first }) { (pathAndName, count) ->
-            val (path, name) = pathAndName
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
-                    .border(0.5.dp, VortexPalette.Outline, VortexShapes.medium)
-                    .clickable { onOpen(path) }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(Icons.Filled.Folder, contentDescription = null, tint = VortexPalette.Neon)
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = VortexPalette.TextHigh,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "$count elementos",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = VortexPalette.TextLow
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -383,20 +613,16 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun EmptyState(hasQuery: Boolean) {
+private fun EmptyState() {
     Box(Modifier.fillMaxSize().padding(30.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = if (hasQuery) "SIN RESULTADOS" else "SIN MEDIOS TODAVÍA",
+                text = "AQUÍ NO HAY NADA",
                 style = MaterialTheme.typography.labelLarge,
                 color = VortexPalette.TextMid
             )
             Text(
-                text = if (hasQuery) {
-                    "Prueba con otro término."
-                } else {
-                    "Cuando descargues o grabes algo, aparecerá aquí."
-                },
+                text = "Cuando descargues o grabes algo, aparecerá aquí.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = VortexPalette.TextLow,
                 modifier = Modifier.padding(top = 8.dp)
@@ -404,7 +630,3 @@ private fun EmptyState(hasQuery: Boolean) {
         }
     }
 }
-
-/** Etiqueta de duración total, reutilizada por la vista de carpeta. */
-internal fun folderSubtitle(entries: List<MediaEntry>): String =
-    "${entries.size} · ${formatDuration(entries.sumOf { it.durationMs })}"

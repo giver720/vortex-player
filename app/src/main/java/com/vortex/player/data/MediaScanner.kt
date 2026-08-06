@@ -130,8 +130,10 @@ class MediaScanner(private val context: Context) {
                     folderName = folder.second,
                     dateAddedSec = cursor.getLong(dateCol),
                     isVideo = false,
-                    artist = cursor.getStringOrNull(artistCol),
-                    album = cursor.getStringOrNull(albumCol)
+                    // MediaStore rellena los huecos con el literal "<unknown>"; mostrarlo
+                    // tal cual queda peor que caer en el nombre de la carpeta.
+                    artist = cursor.getStringOrNull(artistCol).takeUnless { it.isUnknown() },
+                    album = cursor.getStringOrNull(albumCol).takeUnless { it.isUnknown() }
                 )
             }
         }
@@ -147,4 +149,7 @@ class MediaScanner(private val context: Context) {
 
     private fun Cursor.getStringOrNull(index: Int): String? =
         if (index >= 0 && !isNull(index)) getString(index) else null
+
+    private fun String?.isUnknown(): Boolean =
+        this == null || isBlank() || equals("<unknown>", ignoreCase = true)
 }

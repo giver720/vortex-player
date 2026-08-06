@@ -9,8 +9,13 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [MediaStateEntity::class, DownloadEntity::class],
-    version = 2,
+    entities = [
+        MediaStateEntity::class,
+        DownloadEntity::class,
+        PlaylistEntity::class,
+        PlaylistItemEntity::class
+    ],
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -18,6 +23,7 @@ abstract class VortexDatabase : RoomDatabase() {
 
     abstract fun mediaStateDao(): MediaStateDao
     abstract fun downloadDao(): DownloadDao
+    abstract fun playlistDao(): PlaylistDao
 
     companion object {
         @Volatile
@@ -62,6 +68,39 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 → v3 añade listas de reproducción propias. */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playlists` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playlist_items` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `playlistId` INTEGER NOT NULL,
+                        `uri` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        FOREIGN KEY(`playlistId`) REFERENCES `playlists`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_playlist_items_playlistId` " +
+                        "ON `playlist_items` (`playlistId`)"
+                )
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -69,7 +108,7 @@ abstract class VortexDatabase : RoomDatabase() {
                     VortexDatabase::class.java,
                     "vortex.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
