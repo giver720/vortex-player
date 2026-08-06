@@ -1,0 +1,7 @@
+Fixed Spotify downloads, which were failing across the board.
+
+• "Unsupported url scheme: ytmsearch5": the search prefix was made up. yt-dlp only understands ytsearch, so it treated ytmsearch5 as an unknown URL scheme and no song ever downloaded.
+• The search asks for five candidates and they all shared one output filename, so they would have overwritten each other. It now stops at the first one that passes the duration filter.
+• If the filter rejects all five candidates, the download is marked as failed with the reason instead of being reported complete with an empty folder.
+
+• yt-dlp now updates itself once a day before processing the queue. YouTube changes its signature ciphering every few weeks and an old version starts failing without warning.

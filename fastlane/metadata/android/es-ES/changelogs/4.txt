@@ -1,0 +1,7 @@
+Corregidas las descargas de Spotify, que fallaban todas.
+
+• «Unsupported url scheme: ytmsearch5»: el prefijo de búsqueda era inventado. yt-dlp sólo entiende ytsearch, así que tomaba ytmsearch5 por un esquema de URL desconocido y ninguna canción llegaba a descargarse.
+• La búsqueda pide cinco candidatos y todos compartían nombre de fichero, con lo que se habrían pisado entre sí. Ahora se para en el primero que pasa el filtro de duración.
+• Si el filtro descarta los cinco candidatos, la descarga se marca como error explicando el motivo en lugar de darse por completada con la carpeta vacía.
+
+• yt-dlp se actualiza solo una vez al día antes de procesar la cola. YouTube cambia su cifrado de firmas cada pocas semanas y una versión vieja empieza a fallar sin avisar.

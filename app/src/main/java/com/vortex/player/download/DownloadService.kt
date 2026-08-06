@@ -76,6 +76,16 @@ class DownloadService : Service() {
                 stopSelf()
                 return@launch
             }
+
+            // Antes de bajar nada: YouTube cambia su cifrado de firmas cada pocas semanas
+            // y un yt-dlp de hace un mes empieza a fallar. Actualizar aquí, con la cola ya
+            // en marcha, evita que el usuario descubra el problema como una descarga rota.
+            if (EnginePreferences.shouldAutoUpdate(this@DownloadService)) {
+                notify("Actualizando yt-dlp", "Sólo la primera vez del día", 0f)
+                val result = YtDlpEngine.updateBinary(this@DownloadService)
+                EnginePreferences.record(this@DownloadService, result)
+            }
+
             drainQueue()
             stopSelf()
         }
@@ -124,7 +134,11 @@ class DownloadService : Service() {
             var lastPersisted = -1f
             var lastPersistedAt = 0L
 
-            YtDlpEngine.download(
+            // yt-dlp puede terminar con código distinto de cero por motivos benignos
+            // (alcanzar `--max-downloads`, descartar candidatos por el filtro). Lo que
+            // decide si hubo éxito es si quedó un fichero, no el código de salida.
+            runCatching {
+                YtDlpEngine.download(
                 request = request,
                 destination = workspace,
                 processId = processId,
@@ -160,6 +174,24 @@ class DownloadService : Service() {
                     }
                     notify(named.title, line.trim(), clamped)
                 }
+                }
+            }.onFailure { error ->
+                // Si no quedó ningún fichero, el fallo era real: se propaga.
+                val produced = workspace.walkTopDown().any { it.isFile && it.length() > 0 }
+                if (!produced) throw error
+            }
+
+            // yt-dlp también puede terminar con éxito sin bajar nada: pasa cuando el
+            // filtro de duración descarta los cinco candidatos. Sin esta comprobación se
+            // marcaría como completada una descarga que dejó la carpeta vacía.
+            if (workspace.walkTopDown().none { it.isFile && it.length() > 0 }) {
+                throw IllegalStateException(
+                    if (job.targetDurationMs > 0) {
+                        "Ningún resultado de YouTube coincide con la duración de la canción"
+                    } else {
+                        "La descarga no produjo ningún archivo"
+                    }
+                )
             }
 
             // El audio viene de YouTube y hereda su título y su miniatura; aquí se

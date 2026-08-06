@@ -130,6 +130,12 @@ object YtDlpEngine {
                 addOption("--match-filter", "duration > $low & duration < $high")
                 // Sin esto, un vídeo descartado por el filtro aborta la búsqueda entera.
                 addOption("--no-abort-on-error")
+                // La búsqueda devuelve varios candidatos y todos comparten nombre de
+                // salida: sin este tope se pisarían unos a otros y acabaríamos con el
+                // quinto resultado en vez del mejor. yt-dlp termina con código 101 al
+                // alcanzarlo, así que el éxito se decide viendo si hay fichero, no por
+                // el código de salida.
+                addOption("--max-downloads", "1")
             }
             addOption("--no-mtime")
             addOption("--no-warnings")
