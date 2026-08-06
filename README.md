@@ -1,0 +1,119 @@
+# Vórtex
+
+Reproductor de medios para Android con doble motor, ventana flotante y descargas
+integradas. Pensado para plantarle cara a VLC y MX Player sin heredar sus interfaces.
+
+<p align="center">
+  <img src="docs/captura-biblioteca.png" width="30%" alt="Biblioteca" />
+  <img src="docs/captura-reproductor.png" width="30%" alt="Reproductor" />
+  <img src="docs/captura-descargas.png" width="30%" alt="Descargas" />
+</p>
+
+## Qué hace distinto
+
+**Dos motores, una sola sesión.** Media3/ExoPlayer lleva la reproducción normal porque es
+más eficiente y se integra con el sistema sin fricción. Cuando se topa con un códec o un
+contenedor que no entiende, Vórtex rescata la posición exacta y levanta **libVLC** en su
+lugar. El usuario ve un parpadeo y el vídeo sigue; no hay diálogo de error. La insignia
+`MEDIA3` / `VLC` del HUD dice en todo momento quién está reproduciendo.
+
+Técnicamente esto es posible porque libVLC va envuelto en un `SimpleBasePlayer` de Media3
+(`playback/VlcPlayer.kt`), así que ambos motores hablan la misma interfaz `Player` y
+comparten una única `MediaSession`. Notificación, pantalla de bloqueo, mandos Bluetooth,
+ventana flotante y reproductor funcionan igual con cualquiera de los dos.
+
+**Un MP4 suena como un MP3.** El modo solo-audio apaga la decodificación de vídeo sin
+tocar el audio ni la posición: en Media3 desactivando el tipo de pista en el selector, en
+VLC con `setVideoTrackEnabled(false)`. Se puede activar desde la biblioteca, desde el
+reproductor **y desde la propia ventana flotante**, sin cortar el sonido.
+
+**Ventana flotante de verdad.** No es el PiP del sistema (que también está): es una
+ventana propia por encima de cualquier app, que se arrastra con un dedo, se redimensiona
+con dos y lleva dentro el interruptor de solo-audio.
+
+**Descargas con yt-dlp.** YouTube, Vimeo, Twitch, TikTok, Twitter y todo lo que soporte
+yt-dlp. Vídeo hasta 4K o extracción de audio a MP3/M4A/OPUS/FLAC/WAV. Las listas de
+reproducción **crean automáticamente su propia carpeta** con las pistas numeradas, y el
+destino lo elige el usuario con el selector de carpetas del sistema.
+
+**Aspecto al estilo VLC.** Ajustar, llenar, estirar y relaciones forzadas (16:9, 4:3,
+18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco
+encima de cualquier preset.
+
+## Otras funciones
+
+- Biblioteca por MediaStore con miniaturas extraídas del propio vídeo y caché en disco.
+- "Continuar viendo" con la posición guardada cada 4 segundos, resistente a cierres bruscos.
+- Gestos: brillo a la izquierda, volumen a la derecha, arrastre horizontal para buscar,
+  doble toque lateral para ±10 s, bloqueo de controles.
+- Selección de pistas de audio y subtítulos, velocidad de 0,5× a 3× con corrección de tono.
+- Temporizador de apagado.
+- Reproducción en segundo plano con la pantalla apagada.
+- Se abre desde otras apps para cualquier `video/*`, `audio/*`, HLS, RTSP, RTMP y MMS.
+
+## Instalación
+
+Descarga el APK de tu arquitectura desde [Releases](../../releases):
+
+| Archivo | Para |
+|---|---|
+| `app-arm64-v8a-release.apk` | Prácticamente todos los móviles actuales |
+| `app-armeabi-v7a-release.apk` | Móviles antiguos de 32 bits |
+
+Se publica un APK por arquitectura porque libVLC y el intérprete de Python de yt-dlp pesan
+unas decenas de megas **por ABI**; un único APK universal rondaría los 250 MB.
+
+Requiere Android 7.0 (API 24) o superior.
+
+## Permisos y por qué
+
+| Permiso | Para qué |
+|---|---|
+| `READ_MEDIA_VIDEO` / `READ_MEDIA_AUDIO` | Construir la biblioteca. Nada sale del dispositivo. |
+| `SYSTEM_ALERT_WINDOW` | La ventana flotante sobre otras apps. |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Seguir sonando con la app cerrada. |
+| `FOREGROUND_SERVICE_DATA_SYNC` | Que las descargas no se corten al salir de la app. |
+| `POST_NOTIFICATIONS` | Controles en la notificación y progreso de descarga. |
+| `INTERNET` | Streaming y descargas. |
+
+## Compilar
+
+```bash
+git clone https://github.com/giver720/vortex-player.git
+cd vortex-player
+./gradlew assembleDebug
+```
+
+Para una build de release firmada, crea `keystore.properties` en la raíz:
+
+```properties
+storeFile=../keystore/mi-clave.jks
+storePassword=…
+keyAlias=…
+keyPassword=…
+```
+
+Sin ese fichero el proyecto compila igual; las builds de release simplemente salen sin firmar.
+
+## Arquitectura
+
+```
+app/src/main/java/com/vortex/player/
+├── data/            Biblioteca (MediaStore) y persistencia (Room)
+├── playback/        Motores, abstracción de pistas y MediaSessionService
+│   ├── VlcPlayer.kt         libVLC expuesto como Player de Media3
+│   ├── ExoEngineControls.kt Pistas y salida de vídeo en Media3
+│   └── PlaybackService.kt   Sesión única + conmutación de motor
+├── popup/           Ventana flotante (overlay + Compose)
+├── download/        yt-dlp, cola, destino y publicación en la mediateca
+└── ui/              Compose: biblioteca, reproductor, descargas, tema HUD
+```
+
+## Aviso
+
+yt-dlp se incluye para descargar contenido propio o de libre distribución. Respeta los
+términos de servicio de cada plataforma y los derechos de autor del material que descargues.
+
+## Licencia
+
+GPL-3.0, por compatibilidad con libVLC y yt-dlp.

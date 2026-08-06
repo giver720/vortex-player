@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Vórtex</string>
+
+    <string name="nav_library">Biblioteca</string>
+    <string name="nav_folders">Carpetas</string>
+    <string name="nav_recent">Reciente</string>
+    <string name="nav_settings">Ajustes</string>
+
+    <string name="perm_title">Vórtex necesita ver tus medios</string>
+    <string name="perm_body">Para construir tu biblioteca hace falta acceso a los vídeos y audios del dispositivo. Nada sale del teléfono.</string>
+    <string name="perm_grant">Conceder acceso</string>
+
+    <string name="empty_library_title">Sin medios todavía</string>
+    <string name="empty_library_body">No se encontraron vídeos ni audios. Cuando descargues o grabes algo, aparecerá aquí.</string>
+
+    <string name="popup_channel_name">Ventana flotante</string>
+    <string name="playback_channel_name">Reproducción</string>
+    <string name="downloads_channel_name">Descargas</string>
+
+    <string name="audio_only_on">Modo solo audio activado</string>
+    <string name="audio_only_off">Vídeo restaurado</string>
+</resources>

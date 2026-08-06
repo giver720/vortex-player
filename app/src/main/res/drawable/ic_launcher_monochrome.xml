@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Variante para iconos temáticos de Android 13+: una sola tinta, sin halo -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFF">
+
+    <path
+        android:pathData="M54,26 L74.2,42.4 L70.2,63.4 L54,68 L46,58.7 L49.9,51.7"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,82 L33.8,65.7 L37.8,44.7 L54,40 L62.1,49.4 L58.1,56.4"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,54 m-3.2,0 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0"
+        android:fillColor="#FFFFFF" />
+</vector>

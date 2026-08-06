@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Marca Vórtex: dos brazos poligonales que giran hacia el centro en pasos de 60°,
+  con el radio decreciendo de 28 a 4.7. La geometría angular (no curva) es lo que
+  le da el aire de HUD en vez de logo genérico de reproductor.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Halo tenue: da el "glow" sin necesitar blur en runtime -->
+    <path
+        android:pathData="M54,26 L74.2,42.4 L70.2,63.4 L54,68 L46,58.7 L49.9,51.7"
+        android:strokeColor="#39FF7A"
+        android:strokeWidth="14"
+        android:strokeAlpha="0.18"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,82 L33.8,65.7 L37.8,44.7 L54,40 L62.1,49.4 L58.1,56.4"
+        android:strokeColor="#24E0C8"
+        android:strokeWidth="14"
+        android:strokeAlpha="0.18"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Brazo A -->
+    <path
+        android:pathData="M54,26 L74.2,42.4 L70.2,63.4 L54,68 L46,58.7 L49.9,51.7"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+            <gradient
+                android:startX="54" android:startY="26"
+                android:endX="50" android:endY="52"
+                android:type="linear">
+                <item android:offset="0" android:color="#39FF7A" />
+                <item android:offset="1" android:color="#0E5C2E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Brazo B -->
+    <path
+        android:pathData="M54,82 L33.8,65.7 L37.8,44.7 L54,40 L62.1,49.4 L58.1,56.4"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+            <gradient
+                android:startX="54" android:startY="82"
+                android:endX="58" android:endY="56"
+                android:type="linear">
+                <item android:offset="0" android:color="#24E0C8" />
+                <item android:offset="1" android:color="#0B4A52" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Núcleo: el punto de fuga del vórtice -->
+    <path
+        android:pathData="M54,54 m-3.2,0 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0"
+        android:fillColor="#EAFFF2" />
+</vector>

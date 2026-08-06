@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="vortex_graphite">#0B0E0D</color>
+    <color name="vortex_graphite_raised">#141A18</color>
+    <color name="vortex_neon">#39FF7A</color>
+    <color name="vortex_neon_dim">#1F8C46</color>
+    <color name="vortex_cyan">#24E0C8</color>
+    <color name="black">#000000</color>
+</resources>

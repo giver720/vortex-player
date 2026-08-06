@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Respaldo para API 24-25, que no soportan iconos adaptativos -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_vortex_mark"
+    android:inset="8%" />

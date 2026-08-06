@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Igual que ic_vortex_mark pero con el inset que exige el icono adaptativo -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M54,26 L74.2,42.4 L70.2,63.4 L54,68 L46,58.7 L49.9,51.7"
+        android:strokeColor="#39FF7A"
+        android:strokeWidth="14"
+        android:strokeAlpha="0.20"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,82 L33.8,65.7 L37.8,44.7 L54,40 L62.1,49.4 L58.1,56.4"
+        android:strokeColor="#24E0C8"
+        android:strokeWidth="14"
+        android:strokeAlpha="0.20"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M54,26 L74.2,42.4 L70.2,63.4 L54,68 L46,58.7 L49.9,51.7"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+            <gradient
+                android:startX="54" android:startY="26"
+                android:endX="50" android:endY="52"
+                android:type="linear">
+                <item android:offset="0" android:color="#5BFF95" />
+                <item android:offset="1" android:color="#0E5C2E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M54,82 L33.8,65.7 L37.8,44.7 L54,40 L62.1,49.4 L58.1,56.4"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+            <gradient
+                android:startX="54" android:startY="82"
+                android:endX="58" android:endY="56"
+                android:type="linear">
+                <item android:offset="0" android:color="#4BF2DC" />
+                <item android:offset="1" android:color="#0B4A52" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M54,54 m-3.2,0 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0"
+        android:fillColor="#EAFFF2" />
+</vector>
