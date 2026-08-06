@@ -1,0 +1,9 @@
+First public release.
+
+• Dual playback engine: Media3/ExoPlayer with automatic libVLC fallback on unsupported codecs, sharing a single MediaSession
+• Audio-only mode that plays a video like a music file, toggleable from the library, the player and the floating window
+• Floating window over other apps, draggable and resizable, plus system picture-in-picture
+• Downloads with yt-dlp: video up to 4K or audio extraction, user-chosen destination, playlists in their own numbered folder
+• VLC-style aspect ratio picker with forced ratios and pinch zoom
+• Gestures for brightness, volume and seeking; track and subtitle selection; speed 0.5×–3×; sleep timer
+• Library with video thumbnails and continue-watching

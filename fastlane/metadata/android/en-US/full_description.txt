@@ -1,0 +1,39 @@
+Vórtex is a media player built around one idea: you should never see a codec error again, and you should be able to keep listening to a video the moment you stop looking at it.
+
+<b>Two engines, one session</b>
+
+Media3/ExoPlayer handles normal playback because it is efficient and integrates cleanly with the system. When it hits a codec or container it does not understand, Vórtex rescues the exact playback position and brings up libVLC in its place. You see a blink and the video keeps going — no error dialog, no going back to the file list. A badge in the player HUD tells you which engine is running at any moment.
+
+Under the hood, libVLC is wrapped in a Media3 SimpleBasePlayer, so both engines speak the same Player interface and share a single MediaSession. Notification controls, lock screen, Bluetooth buttons, the floating window and the full-screen player all behave identically no matter which engine is active.
+
+<b>A video that plays like a song</b>
+
+Audio-only mode switches off video decoding without touching the sound or the position: it disables the video track type in Media3, and calls setVideoTrackEnabled(false) in libVLC. Battery lasts longer, the screen can go dark, and playback continues. You can toggle it from the library, from the player, and from inside the floating window itself.
+
+<b>A real floating window</b>
+
+Not the system picture-in-picture — though that is there too. This is a window of its own, on top of any other app, dragged with one finger and resized with two, with the audio-only switch built in.
+
+<b>Downloads with yt-dlp</b>
+
+YouTube, Vimeo, Twitch, TikTok, Twitter and everything else yt-dlp supports. Video up to 4K, or audio extracted to MP3, M4A, OPUS, FLAC or WAV. Playlists automatically get their own folder with numbered tracks, and you pick the destination folder with the system folder picker.
+
+<b>Aspect ratio, VLC style</b>
+
+Fit, fill, stretch and forced ratios (16:9, 4:3, 18:9, 21:9, 1:1) for files that carry wrong metadata, plus pinch zoom on top of any preset.
+
+<b>Everything else</b>
+
+* Library built from MediaStore, with thumbnails pulled from the video itself and cached on disk
+* Continue watching, with position saved every 4 seconds so a crash costs you nothing
+* Gestures: brightness on the left, volume on the right, horizontal drag to seek, double tap for ±10 s, control lock
+* Audio track and subtitle selection, playback speed from 0.5× to 3× with pitch correction
+* Sleep timer
+* Background playback with the screen off
+* Opens from other apps for video/*, audio/*, HLS, RTSP, RTMP and MMS
+
+<b>Note on downloads</b>
+
+yt-dlp is included so you can download your own content or freely distributable material. Respect each platform's terms of service and the copyright of what you download.
+
+Vórtex is free software under the GPL-3.0.

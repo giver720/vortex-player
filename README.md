@@ -65,6 +65,19 @@ unas decenas de megas **por ABI**; un único APK universal rondaría los 250 MB.
 
 Requiere Android 7.0 (API 24) o superior.
 
+### Catálogos
+
+Los metadatos de tienda están en `fastlane/metadata/android/` (formato fastlane, que es el
+que consumen F-Droid e IzzyOnDroid), en español e inglés.
+
+**IzzyOnDroid** es el catálogo objetivo: indexa los APK firmados de las Releases de este
+repositorio y da actualizaciones automáticas a través del cliente de F-Droid.
+
+**f-droid.org** propiamente dicho compila desde el código fuente en su propio servidor y
+rechaza los binarios precompilados. Vórtex incluye tres (libVLC, el intérprete de Python de
+yt-dlp y ffmpeg), así que entrar ahí exigiría compilarlos también desde fuente. No es
+imposible —VLC lo hace— pero es un proyecto en sí mismo.
+
 ## Permisos y por qué
 
 | Permiso | Para qué |

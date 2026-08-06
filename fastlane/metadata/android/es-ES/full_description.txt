@@ -1,0 +1,39 @@
+Vórtex es un reproductor de medios construido sobre una idea: que no vuelvas a ver un error de códec, y que puedas seguir escuchando un vídeo en cuanto dejes de mirarlo.
+
+<b>Dos motores, una sola sesión</b>
+
+Media3/ExoPlayer lleva la reproducción normal porque es eficiente y se integra con el sistema sin fricción. Cuando se topa con un códec o un contenedor que no entiende, Vórtex rescata la posición exacta y levanta libVLC en su lugar. Ves un parpadeo y el vídeo sigue: ni diálogo de error ni volver a la lista de ficheros. Una insignia en el HUD del reproductor te dice en todo momento qué motor está tirando del carro.
+
+Por dentro, libVLC va envuelto en un SimpleBasePlayer de Media3, así que los dos motores hablan la misma interfaz Player y comparten una única MediaSession. Los controles de la notificación, la pantalla de bloqueo, los botones Bluetooth, la ventana flotante y el reproductor a pantalla completa se comportan igual con cualquiera de los dos.
+
+<b>Un vídeo que suena como una canción</b>
+
+El modo solo-audio apaga la decodificación de vídeo sin tocar el sonido ni la posición: desactiva el tipo de pista de vídeo en Media3 y llama a setVideoTrackEnabled(false) en libVLC. La batería dura más, la pantalla puede apagarse y la reproducción continúa. Se conmuta desde la biblioteca, desde el reproductor y desde la propia ventana flotante.
+
+<b>Una ventana flotante de verdad</b>
+
+No es el picture-in-picture del sistema, aunque también está. Es una ventana propia, por encima de cualquier otra app, que se arrastra con un dedo y se redimensiona con dos, con el interruptor de solo-audio dentro.
+
+<b>Descargas con yt-dlp</b>
+
+YouTube, Vimeo, Twitch, TikTok, Twitter y todo lo demás que soporte yt-dlp. Vídeo hasta 4K, o audio extraído a MP3, M4A, OPUS, FLAC o WAV. Las listas de reproducción crean automáticamente su propia carpeta con las pistas numeradas, y eliges la carpeta de destino con el selector del sistema.
+
+<b>Relación de aspecto, al estilo VLC</b>
+
+Ajustar, llenar, estirar y relaciones forzadas (16:9, 4:3, 18:9, 21:9, 1:1) para los ficheros que traen mal los metadatos, más zoom por pellizco encima de cualquier preset.
+
+<b>Todo lo demás</b>
+
+* Biblioteca construida desde MediaStore, con miniaturas extraídas del propio vídeo y caché en disco
+* Continuar viendo, con la posición guardada cada 4 segundos para que un cierre brusco no te cueste nada
+* Gestos: brillo a la izquierda, volumen a la derecha, arrastre horizontal para buscar, doble toque para ±10 s, bloqueo de controles
+* Selección de pistas de audio y subtítulos, velocidad de 0,5× a 3× con corrección de tono
+* Temporizador de apagado
+* Reproducción en segundo plano con la pantalla apagada
+* Se abre desde otras apps para video/*, audio/*, HLS, RTSP, RTMP y MMS
+
+<b>Sobre las descargas</b>
+
+yt-dlp se incluye para que descargues contenido propio o de libre distribución. Respeta los términos de servicio de cada plataforma y los derechos de autor del material que descargues.
+
+Vórtex es software libre bajo licencia GPL-3.0.

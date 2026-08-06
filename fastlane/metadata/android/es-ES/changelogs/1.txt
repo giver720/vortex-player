@@ -1,0 +1,9 @@
+Primera versión pública.
+
+• Doble motor de reproducción: Media3/ExoPlayer con respaldo automático de libVLC ante códecs no soportados, compartiendo una única MediaSession
+• Modo solo-audio que reproduce un vídeo como si fuera música, conmutable desde la biblioteca, el reproductor y la ventana flotante
+• Ventana flotante sobre otras apps, arrastrable y redimensionable, además del picture-in-picture del sistema
+• Descargas con yt-dlp: vídeo hasta 4K o extracción de audio, destino elegido por ti, listas de reproducción en su propia carpeta numerada
+• Selector de relación de aspecto al estilo VLC con relaciones forzadas y zoom por pellizco
+• Gestos de brillo, volumen y búsqueda; selección de pistas y subtítulos; velocidad 0,5×–3×; temporizador
+• Biblioteca con miniaturas de vídeo y continuar viendo
