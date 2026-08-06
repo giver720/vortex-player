@@ -40,9 +40,18 @@ destino lo elige el usuario con el selector de carpetas del sistema.
 18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco
 encima de cualquier preset.
 
+**Se actualiza sola.** Vórtex consulta las publicaciones de este repositorio, elige el APK
+que corresponde a la arquitectura del móvil, lo descarga con progreso y se lo entrega al
+instalador del sistema. Al no estar en ninguna tienda, esta es la vía para no quedarse
+atrás sin depender de que alguien recuerde volver aquí.
+
 ## Otras funciones
 
 - Biblioteca por MediaStore con miniaturas extraídas del propio vídeo y caché en disco.
+- Árbol de carpetas navegable, con ramas plegables y migas de pan.
+- Búsqueda unificada por nombre de fichero, carpeta y ruta, con resultados agrupados.
+- Orden por fecha, nombre, duración, tamaño o resolución, y vista rejilla o lista.
+- Selección múltiple con acciones en bloque, listas de reproducción propias y favoritos.
 - "Continuar viendo" con la posición guardada cada 4 segundos, resistente a cierres bruscos.
 - Gestos: brillo a la izquierda, volumen a la derecha, arrastre horizontal para buscar,
   doble toque lateral para ±10 s, bloqueo de controles.
@@ -119,6 +128,7 @@ app/src/main/java/com/vortex/player/
 │   └── PlaybackService.kt   Sesión única + conmutación de motor
 ├── popup/           Ventana flotante (overlay + Compose)
 ├── download/        yt-dlp, cola, destino y publicación en la mediateca
+├── update/          Comprobación, descarga e instalación desde las Releases
 └── ui/              Compose: biblioteca, reproductor, descargas, tema HUD
 ```
 
