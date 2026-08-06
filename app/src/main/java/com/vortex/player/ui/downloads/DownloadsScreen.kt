@@ -85,6 +85,7 @@ fun DownloadsScreen(
     val engineReady by viewModel.engineReady.collectAsStateWithLifecycle()
     val isSpotify by viewModel.isSpotifyLink.collectAsStateWithLifecycle()
     val resolving by viewModel.resolving.collectAsStateWithLifecycle()
+    val partialWarning by viewModel.partialWarning.collectAsStateWithLifecycle()
 
     LaunchedEffect(message) {
         if (message != null) {
@@ -145,6 +146,10 @@ fun DownloadsScreen(
                     },
                     onEnqueue = viewModel::enqueue
                 )
+            }
+
+            if (partialWarning) {
+                item { PartialListWarning(onDismiss = viewModel::dismissPartialWarning) }
             }
 
             if (isSpotify) {
@@ -360,6 +365,45 @@ private fun SpotifyNotice(resolving: Boolean) {
             style = MaterialTheme.typography.bodySmall,
             color = VortexPalette.TextMid,
             modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/**
+ * La lista se quedó en 100. Es importante decirlo: si no, el usuario cree que su
+ * playlist de trescientas se bajó entera y descubre el hueco semanas después.
+ */
+@Composable
+private fun PartialListWarning(onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Amber.copy(alpha = 0.5f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "LISTA INCOMPLETA",
+            style = MaterialTheme.typography.labelMedium,
+            color = VortexPalette.Amber
+        )
+        Text(
+            text = "Spotify sólo dejó leer las primeras 100 canciones. Vuelve a pegar el " +
+                "enlace dentro de un rato para intentar el resto: el acceso rápido a " +
+                "listas largas está limitado y suele desbloquearse solo.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextMid,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+        Text(
+            text = "ENTENDIDO",
+            style = MaterialTheme.typography.labelLarge,
+            color = VortexPalette.Amber,
+            modifier = Modifier
+                .padding(top = 10.dp)
+                .clickable(onClick = onDismiss)
+                .padding(vertical = 4.dp)
         )
     }
 }

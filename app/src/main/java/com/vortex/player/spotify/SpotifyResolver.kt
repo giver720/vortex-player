@@ -1,5 +1,6 @@
 package com.vortex.player.spotify
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -11,15 +12,29 @@ import java.net.URL
  * Traduce un enlace de Spotify a una lista de canciones **leyendo sólo metadatos**.
  *
  * El audio de Spotify va cifrado y no se toca: lo único que se obtiene aquí es el
- * catálogo (título, artista, duración, portada) que luego sirve para buscar la canción
- * en YouTube Music. Es el mismo enfoque de spotDL.
+ * catálogo (título, artista, álbum, duración, portada) que luego sirve para buscar la
+ * canción en YouTube Music. Es el mismo enfoque de spotDL.
  *
- * La fuente es la página pública de *embed*, la que usa cualquiera que incrusta un
- * reproductor de Spotify en su web. No hace falta cuenta ni credenciales, a cambio de
- * depender de una estructura que Spotify puede cambiar sin avisar; por eso los errores
- * se devuelven explicados en vez de como un fallo genérico.
+ * Hay dos vías. La página pública de *embed* devuelve la lista al instante y sin
+ * credenciales, pero **corta en 100 pistas y no pagina**. Para superar ese tope se
+ * aprovecha que esa misma página trae un token de sesión anónima, con el que se puede
+ * pedir la lista completa a la API pública de cien en cien. Ese token está limitado y
+ * responde 429 con frecuencia, así que la vía rápida es un extra, no la base: si falla,
+ * se devuelven las 100 del embed marcadas como incompletas.
  */
 object SpotifyResolver {
+
+    private const val TAG = "SpotifyResolver"
+
+    /** Tope duro del embed. Llegar a él significa "seguramente hay más". */
+    private const val EMBED_MAX = 100
+
+    /** Tamaño de bloque de la API. 100 es el máximo que admite para playlists. */
+    private const val PAGE = 100
+
+    private const val UA =
+        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/120.0 Mobile Safari/537.36"
 
     private val LINK = Regex(
         """(?:open\.spotify\.com/(?:intl-[a-z-]+/)?|spotify:)(track|album|playlist)[/:]([A-Za-z0-9]+)"""
@@ -27,18 +42,29 @@ object SpotifyResolver {
 
     fun isSpotifyLink(input: String): Boolean = LINK.containsMatchIn(input)
 
-    suspend fun resolve(input: String): SpotifyResult = withContext(Dispatchers.IO) {
+    /**
+     * Resuelve el enlace. Las canciones llegan por bloques a [onPage] conforme se
+     * obtienen, para que la cola empiece a moverse con el primero en vez de esperar a
+     * que se resuelva una lista de trescientas.
+     *
+     * El resultado final contiene la lista completa de lo que se pudo obtener.
+     */
+    suspend fun resolve(
+        input: String,
+        onPage: (suspend (folder: String?, page: List<SpotifyTrack>) -> Unit)? = null
+    ): SpotifyResult = withContext(Dispatchers.IO) {
         val match = LINK.find(input)
             ?: return@withContext SpotifyResult.Error("Ese enlace de Spotify no se reconoce")
 
-        val kind = when (match.groupValues[1]) {
+        val kindName = match.groupValues[1]
+        val id = match.groupValues[2]
+        val kind = when (kindName) {
             "track" -> SpotifyKind.TRACK
             "album" -> SpotifyKind.ALBUM
             else -> SpotifyKind.PLAYLIST
         }
-        val id = match.groupValues[2]
 
-        val html = fetch("https://open.spotify.com/embed/${match.groupValues[1]}/$id")
+        val html = fetch("https://open.spotify.com/embed/$kindName/$id")
             ?: return@withContext SpotifyResult.Error(
                 "No se pudo abrir el enlace. Comprueba tu conexión o que sea público."
             )
@@ -48,28 +74,217 @@ object SpotifyResolver {
                 "Spotify ha cambiado el formato de su página y ya no se puede leer la lista."
             )
 
-        runCatching { parse(json, kind) }
-            .getOrNull()
-            ?.takeIf { it.tracks.isNotEmpty() }
-            ?.let { SpotifyResult.Ok(it) }
-            ?: SpotifyResult.Error("No se encontró ninguna canción en ese enlace")
+        val entity = entityOf(json)
+            ?: return@withContext SpotifyResult.Error(
+                "Spotify ha cambiado la estructura de la página."
+            )
+
+        val name = entity.optString("name")
+            .ifBlank { entity.optString("title") }
+            .ifBlank { "Spotify" }
+        val cover = largestCover(entity.optJSONObject("coverArt"))
+
+        // --- Canción suelta ---------------------------------------------------
+        val trackList = entity.optJSONArray("trackList")
+        if (kind == SpotifyKind.TRACK || trackList == null || trackList.length() == 0) {
+            val title = entity.optString("title").ifBlank { name }
+            val track = SpotifyTrack(
+                title = title,
+                artist = artistsOf(entity).ifBlank { entity.optString("subtitle") },
+                album = entity.optString("albumName").ifBlank { title },
+                durationMs = entity.optLong("duration"),
+                coverUrl = cover,
+                trackNumber = 1,
+                totalTracks = 1
+            )
+            onPage?.invoke(null, listOf(track))
+            return@withContext SpotifyResult.Ok(
+                SpotifyCollection(SpotifyKind.TRACK, title, cover, listOf(track), false, 1)
+            )
+        }
+
+        val embedTracks = parseEmbedTracks(trackList, name, cover)
+        val looksTruncated = trackList.length() >= EMBED_MAX
+
+        // --- Vía rápida: sólo hace falta si el embed se quedó corto -----------
+        if (looksTruncated) {
+            val token = json.optJSONObject("props")
+                ?.optJSONObject("pageProps")
+                ?.optJSONObject("state")
+                ?.optJSONObject("settings")
+                ?.optJSONObject("session")
+                ?.optString("accessToken")
+                ?.takeIf { it.isNotBlank() }
+
+            if (token != null) {
+                // `name` es también el nombre de la carpeta: se conoce desde el embed,
+                // antes de empezar a paginar, así que cada bloque puede encolarse ya.
+                val paged = fetchAllPages(kind, id, token, name, cover, onPage)
+                // En cuanto la API entregó algo hay que quedarse con ello aunque se
+                // cortara a medias: esas canciones ya se emitieron por `onPage`, y caer
+                // al respaldo del embed las encolaría por segunda vez.
+                if (paged.tracks.isNotEmpty()) {
+                    return@withContext SpotifyResult.Ok(
+                        SpotifyCollection(
+                            kind = kind,
+                            name = name,
+                            coverUrl = cover,
+                            tracks = paged.tracks,
+                            partial = !paged.complete,
+                            totalTracks = paged.total
+                        )
+                    )
+                }
+            }
+        }
+
+        // --- Respaldo: lo que dio el embed -----------------------------------
+        onPage?.invoke(name, embedTracks)
+        SpotifyResult.Ok(
+            SpotifyCollection(
+                kind = kind,
+                name = name,
+                coverUrl = cover,
+                tracks = embedTracks,
+                partial = looksTruncated,
+                totalTracks = embedTracks.size
+            )
+        )
     }
 
-    private fun fetch(url: String): String? = runCatching {
+    /** Lo obtenido de la API y si se llegó hasta el final de la lista. */
+    private class Paged(
+        val tracks: List<SpotifyTrack>,
+        val complete: Boolean,
+        val total: Int
+    )
+
+    /**
+     * Recorre la lista de cien en cien con el token del embed.
+     *
+     * Devuelve lo conseguido aunque se corte a mitad: el token es el de la sesión
+     * anónima del reproductor incrustado y Spotify lo limita, así que un 429 en la
+     * tercera página es un desenlace normal, no una excepción.
+     */
+    private suspend fun fetchAllPages(
+        kind: SpotifyKind,
+        id: String,
+        token: String,
+        collectionName: String,
+        collectionCover: String?,
+        onPage: (suspend (folder: String?, page: List<SpotifyTrack>) -> Unit)?
+    ): Paged {
+        val all = mutableListOf<SpotifyTrack>()
+        var offset = 0
+        var total = Int.MAX_VALUE
+        var declaredTotal = 0
+
+        while (offset < total) {
+            val url = when (kind) {
+                SpotifyKind.ALBUM ->
+                    "https://api.spotify.com/v1/albums/$id/tracks?limit=50&offset=$offset"
+                else ->
+                    "https://api.spotify.com/v1/playlists/$id/tracks" +
+                        "?limit=$PAGE&offset=$offset" +
+                        "&fields=total,items(track(name,duration_ms,track_number," +
+                        "artists(name),album(name,images)))"
+            }
+
+            val page = fetch(url, token) ?: run {
+                Log.w(TAG, "La API cortó en offset=$offset; se usa lo obtenido hasta aquí")
+                return Paged(all, complete = false, total = declaredTotal)
+            }
+
+            val json = runCatching { JSONObject(page) }.getOrNull()
+                ?: return Paged(all, complete = false, total = declaredTotal)
+
+            total = json.optInt("total", 0).takeIf { it > 0 } ?: break
+            declaredTotal = total
+            val items = json.optJSONArray("items") ?: break
+            if (items.length() == 0) break
+
+            val batch = mutableListOf<SpotifyTrack>()
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                // En playlists la canción viene anidada; en álbumes el elemento ya lo es.
+                val track = item.optJSONObject("track") ?: item
+                val title = track.optString("name")
+                if (title.isBlank()) continue
+
+                val album = track.optJSONObject("album")
+                batch += SpotifyTrack(
+                    title = title,
+                    artist = artistsOf(track),
+                    // Aquí sí llega el álbum de verdad, no el nombre de la lista.
+                    album = album?.optString("name")?.takeIf { it.isNotBlank() }
+                        ?: collectionName,
+                    durationMs = track.optLong("duration_ms"),
+                    coverUrl = album?.let { largestImage(it.optJSONArray("images")) }
+                        ?: collectionCover,
+                    trackNumber = all.size + batch.size + 1,
+                    totalTracks = total
+                )
+            }
+
+            if (batch.isEmpty()) break
+            all += batch
+            onPage?.invoke(collectionName, batch)
+            offset += items.length()
+        }
+
+        // Se considera completa si se alcanzó el total que declaró Spotify. Algunas
+        // listas tienen pistas retiradas del catálogo, que la API devuelve nulas y aquí
+        // se descartan, así que la cuenta puede quedar por debajo sin que falte nada.
+        val complete = declaredTotal > 0 && offset >= declaredTotal
+        return Paged(all, complete, declaredTotal)
+    }
+
+    private fun parseEmbedTracks(
+        trackList: JSONArray,
+        collectionName: String,
+        cover: String?
+    ): List<SpotifyTrack> {
+        val total = trackList.length()
+        return buildList {
+            for (i in 0 until total) {
+                val item = trackList.optJSONObject(i) ?: continue
+                val title = item.optString("title")
+                if (title.isBlank()) continue
+                add(
+                    SpotifyTrack(
+                        title = title,
+                        // En el embed el artista viene en `subtitle`, ya combinado si
+                        // la canción tiene varios intérpretes.
+                        artist = item.optString("subtitle"),
+                        // El embed no expone el álbum real de cada canción; se usa el
+                        // nombre de la colección para no dejar "Álbum desconocido".
+                        album = collectionName,
+                        durationMs = item.optLong("duration"),
+                        coverUrl = cover,
+                        trackNumber = i + 1,
+                        totalTracks = total
+                    )
+                )
+            }
+        }
+    }
+
+    private fun fetch(url: String, bearer: String? = null): String? = runCatching {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             instanceFollowRedirects = true
             connectTimeout = 12_000
             readTimeout = 15_000
             // Sin un User-Agent de navegador, Spotify devuelve una página vacía.
-            setRequestProperty(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"
-            )
+            setRequestProperty("User-Agent", UA)
             setRequestProperty("Accept-Language", "es,en;q=0.8")
+            bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         try {
-            if (connection.responseCode !in 200..299) return null
+            if (connection.responseCode !in 200..299) {
+                Log.w(TAG, "HTTP ${connection.responseCode} en $url")
+                return null
+            }
             connection.inputStream.bufferedReader().readText()
         } finally {
             connection.disconnect()
@@ -87,72 +302,14 @@ object SpotifyResolver {
         }.getOrNull()
     }
 
-    private fun parse(root: JSONObject, kind: SpotifyKind): SpotifyCollection? {
-        // La ruta ha cambiado alguna vez entre versiones del embed; se prueban ambas.
-        val entity = root.optJSONObject("props")
+    /** La ruta ha cambiado alguna vez entre versiones del embed; se prueban ambas. */
+    private fun entityOf(root: JSONObject): JSONObject? =
+        root.optJSONObject("props")
             ?.optJSONObject("pageProps")
             ?.let { page ->
                 page.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("entity")
                     ?: page.optJSONObject("entity")
             }
-            ?: return null
-
-        val collectionName = entity.optString("name")
-            .ifBlank { entity.optString("title") }
-            .ifBlank { "Spotify" }
-        val collectionCover = largestCover(entity.optJSONObject("coverArt"))
-
-        val trackList: JSONArray? = entity.optJSONArray("trackList")
-
-        // Una canción suelta no trae `trackList`: la propia entidad es la canción.
-        if (kind == SpotifyKind.TRACK || trackList == null || trackList.length() == 0) {
-            val title = entity.optString("title").ifBlank { collectionName }
-            val artist = artistsOf(entity).ifBlank { entity.optString("subtitle") }
-            return SpotifyCollection(
-                kind = SpotifyKind.TRACK,
-                name = title,
-                coverUrl = collectionCover,
-                tracks = listOf(
-                    SpotifyTrack(
-                        title = title,
-                        artist = artist,
-                        album = entity.optString("albumName").ifBlank { title },
-                        durationMs = entity.optLong("duration"),
-                        coverUrl = collectionCover,
-                        trackNumber = 1,
-                        totalTracks = 1
-                    )
-                )
-            )
-        }
-
-        val total = trackList.length()
-        val tracks = buildList {
-            for (i in 0 until total) {
-                val item = trackList.optJSONObject(i) ?: continue
-                val title = item.optString("title")
-                if (title.isBlank()) continue
-                add(
-                    SpotifyTrack(
-                        title = title,
-                        // En el embed el artista viene en `subtitle`, ya combinado si
-                        // la canción tiene varios intérpretes.
-                        artist = item.optString("subtitle"),
-                        // El embed de una lista no expone el álbum real de cada canción,
-                        // así que se usa el nombre de la lista: deja la biblioteca
-                        // agrupada en vez de llena de "Álbum desconocido".
-                        album = collectionName,
-                        durationMs = item.optLong("duration"),
-                        coverUrl = collectionCover,
-                        trackNumber = i + 1,
-                        totalTracks = total
-                    )
-                )
-            }
-        }
-
-        return SpotifyCollection(kind, collectionName, collectionCover, tracks)
-    }
 
     private fun artistsOf(entity: JSONObject): String {
         val artists = entity.optJSONArray("artists") ?: return ""
@@ -162,8 +319,11 @@ object SpotifyResolver {
     }
 
     /** La portada más grande disponible; las miniaturas de 64 px no sirven para etiquetar. */
-    private fun largestCover(coverArt: JSONObject?): String? {
-        val sources = coverArt?.optJSONArray("sources") ?: return null
+    private fun largestCover(coverArt: JSONObject?): String? =
+        largestImage(coverArt?.optJSONArray("sources"))
+
+    private fun largestImage(sources: JSONArray?): String? {
+        if (sources == null) return null
         var best: String? = null
         var bestWidth = -1
         var last: String? = null
@@ -177,8 +337,7 @@ object SpotifyResolver {
                 best = url
             }
         }
-        // Las portadas de lista suelen venir sin `width`; ahí Spotify las ordena de
-        // menor a mayor, así que la última es la buena.
+        // Algunas portadas vienen sin `width`; ahí Spotify las ordena de menor a mayor.
         return if (bestWidth > 0) best else last
     }
 }

@@ -14,6 +14,7 @@ import com.vortex.player.download.DownloadRequest
 import com.vortex.player.download.DownloadService
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.download.YtDlpEngine
+import com.vortex.player.spotify.SpotifyKind
 import com.vortex.player.spotify.SpotifyResolver
 import com.vortex.player.spotify.SpotifyResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -105,6 +106,12 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     private val _resolving = MutableStateFlow(false)
     val resolving: StateFlow<Boolean> = _resolving.asStateFlow()
 
+    /** La última lista se quedó corta: Spotify no dejó leerla entera. */
+    private val _partialWarning = MutableStateFlow(false)
+    val partialWarning: StateFlow<Boolean> = _partialWarning.asStateFlow()
+
+    fun dismissPartialWarning() { _partialWarning.value = false }
+
     fun enqueue() {
         val link = _url.value.trim()
         if (link.isBlank()) {
@@ -149,25 +156,39 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _resolving.value = true
             _message.value = "Leyendo la lista en Spotify…"
-            when (val result = SpotifyResolver.resolve(link)) {
+
+            val base = DownloadRequest(
+                url = link,
+                kind = DownloadKind.AUDIO,
+                audioCodec = _codec.value,
+                audioBitrate = _bitrate.value
+            )
+
+            var queued = 0
+
+            // Cada bloque se encola en cuanto llega; el servicio arranca con el primero,
+            // así que en una lista larga la primera canción ya se está bajando mientras
+            // se leen las demás.
+            val result = SpotifyResolver.resolve(link) { folder, page ->
+                val first = queued == 0
+                queued += repository.enqueueSpotifyTracks(page, folder, base)
+                _message.value = "$queued canciones en la cola…"
+                if (first) DownloadService.start(getApplication())
+            }
+
+            when (result) {
                 is SpotifyResult.Error -> _message.value = result.message
                 is SpotifyResult.Ok -> {
-                    val count = repository.enqueueSpotify(
-                        collection = result.collection,
-                        base = DownloadRequest(
-                            url = link,
-                            kind = DownloadKind.AUDIO,
-                            audioCodec = _codec.value,
-                            audioBitrate = _bitrate.value
-                        )
-                    )
-                    DownloadService.start(getApplication())
-                    _url.value = ""
-                    _message.value = if (count == 1) {
-                        "1 canción en la cola"
-                    } else {
-                        "$count canciones de «${result.collection.name}» en la cola"
+                    val collection = result.collection
+                    if (queued > 0) _url.value = ""
+                    _message.value = buildString {
+                        append(if (queued == 1) "1 canción" else "$queued canciones")
+                        if (collection.kind != SpotifyKind.TRACK) {
+                            append(" de «${collection.name}»")
+                        }
+                        append(" en la cola")
                     }
+                    _partialWarning.value = collection.partial
                 }
             }
             _resolving.value = false

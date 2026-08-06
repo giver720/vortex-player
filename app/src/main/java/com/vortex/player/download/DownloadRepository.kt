@@ -6,6 +6,7 @@ import com.vortex.player.data.db.DownloadEntity
 import com.vortex.player.data.db.VortexDatabase
 import com.vortex.player.spotify.SpotifyCollection
 import com.vortex.player.spotify.SpotifyJobs
+import com.vortex.player.spotify.SpotifyTrack
 import kotlinx.coroutines.flow.Flow
 
 class DownloadRepository(private val dao: DownloadDao) {
@@ -36,9 +37,20 @@ class DownloadRepository(private val dao: DownloadDao) {
     suspend fun enqueueSpotify(
         collection: SpotifyCollection,
         base: DownloadRequest
+    ): Int = enqueueSpotifyTracks(collection.tracks, collection.folderName, base)
+
+    /**
+     * Encola un bloque de canciones. Se llama una vez por página al resolver una lista
+     * larga, de modo que la primera descarga empieza mientras aún se está leyendo el
+     * resto: en una playlist de trescientas, esperar a tenerlas todas serían minutos
+     * de pantalla quieta.
+     */
+    suspend fun enqueueSpotifyTracks(
+        tracks: List<SpotifyTrack>,
+        folder: String?,
+        base: DownloadRequest
     ): Int {
-        val folder = collection.folderName
-        collection.tracks.forEach { track ->
+        tracks.forEach { track ->
             dao.insert(
                 DownloadEntity(
                     url = base.url,
@@ -59,7 +71,7 @@ class DownloadRepository(private val dao: DownloadDao) {
                 )
             )
         }
-        return collection.tracks.size
+        return tracks.size
     }
 
     suspend fun nextQueued(): DownloadEntity? = dao.nextQueued()
