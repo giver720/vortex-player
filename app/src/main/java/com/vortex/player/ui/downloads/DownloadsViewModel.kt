@@ -14,7 +14,10 @@ import com.vortex.player.download.DownloadRequest
 import com.vortex.player.download.DownloadService
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.download.YtDlpEngine
+import com.vortex.player.spotify.SpotifyResolver
+import com.vortex.player.spotify.SpotifyResult
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,16 +97,32 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { DestinationStore.clear(getApplication()) }
     }
 
+    /** El enlace pegado apunta a Spotify: la interfaz lo dice y el flujo cambia. */
+    val isSpotifyLink: StateFlow<Boolean> = _url
+        .map { SpotifyResolver.isSpotifyLink(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    private val _resolving = MutableStateFlow(false)
+    val resolving: StateFlow<Boolean> = _resolving.asStateFlow()
+
     fun enqueue() {
         val link = _url.value.trim()
         if (link.isBlank()) {
             _message.value = "Pega primero un enlace"
             return
         }
-        if (!link.startsWith("http", ignoreCase = true)) {
+        if (!link.startsWith("http", ignoreCase = true) &&
+            !link.startsWith("spotify:", ignoreCase = true)
+        ) {
             _message.value = "Ese texto no parece un enlace"
             return
         }
+
+        if (SpotifyResolver.isSpotifyLink(link)) {
+            enqueueSpotify(link)
+            return
+        }
+
         viewModelScope.launch {
             repository.enqueue(
                 DownloadRequest(
@@ -119,6 +138,39 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             DownloadService.start(getApplication())
             _url.value = ""
             _message.value = "Añadido a la cola"
+        }
+    }
+
+    /**
+     * Resuelve el enlace contra el catálogo de Spotify y mete una entrada por canción.
+     * De Spotify sólo salen metadatos; el audio se busca luego en YouTube Music.
+     */
+    private fun enqueueSpotify(link: String) {
+        viewModelScope.launch {
+            _resolving.value = true
+            _message.value = "Leyendo la lista en Spotify…"
+            when (val result = SpotifyResolver.resolve(link)) {
+                is SpotifyResult.Error -> _message.value = result.message
+                is SpotifyResult.Ok -> {
+                    val count = repository.enqueueSpotify(
+                        collection = result.collection,
+                        base = DownloadRequest(
+                            url = link,
+                            kind = DownloadKind.AUDIO,
+                            audioCodec = _codec.value,
+                            audioBitrate = _bitrate.value
+                        )
+                    )
+                    DownloadService.start(getApplication())
+                    _url.value = ""
+                    _message.value = if (count == 1) {
+                        "1 canción en la cola"
+                    } else {
+                        "$count canciones de «${result.collection.name}» en la cola"
+                    }
+                }
+            }
+            _resolving.value = false
         }
     }
 

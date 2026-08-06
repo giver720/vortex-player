@@ -15,6 +15,8 @@ import com.vortex.player.R
 import com.vortex.player.VortexApp
 import com.vortex.player.data.MediaRepository
 import com.vortex.player.data.db.DownloadEntity
+import com.vortex.player.spotify.Id3Tagger
+import com.vortex.player.spotify.SpotifyJobs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,16 +98,26 @@ class DownloadService : Service() {
         workspace.mkdirs()
 
         try {
-            repository.updateProgress(job.id, DownloadStatus.FETCHING, 0f, -1, "Consultando fuente…")
-            notify(job.url, "Consultando fuente…", 0f)
+            val spotify = SpotifyJobs.readTags(job.tagsJson)
 
-            val summary = YtDlpEngine.fetchInfo(job.url, flatPlaylist = job.playlist)
-            val named = job.copy(
-                title = summary?.title?.takeIf { it.isNotBlank() } ?: job.url,
-                uploader = summary?.uploader.orEmpty(),
-                thumbnailUrl = summary?.thumbnail,
-                status = DownloadStatus.DOWNLOADING
-            )
+            // Una canción de Spotify ya viene con título y artista del catálogo, así que
+            // consultar metadatos sería gastar una llamada de red para saber lo que ya
+            // sabemos —y encima la respondería el vídeo de YouTube, con peores datos.
+            val named = if (spotify != null) {
+                job.copy(status = DownloadStatus.DOWNLOADING)
+            } else {
+                repository.updateProgress(
+                    job.id, DownloadStatus.FETCHING, 0f, -1, "Consultando fuente…"
+                )
+                notify(job.url, "Consultando fuente…", 0f)
+                val summary = YtDlpEngine.fetchInfo(job.url, flatPlaylist = job.playlist)
+                job.copy(
+                    title = summary?.title?.takeIf { it.isNotBlank() } ?: job.url,
+                    uploader = summary?.uploader.orEmpty(),
+                    thumbnailUrl = summary?.thumbnail,
+                    status = DownloadStatus.DOWNLOADING
+                )
+            }
             repository.update(named)
 
             val request = with(repository) { job.toRequest() }
@@ -115,7 +127,12 @@ class DownloadService : Service() {
             YtDlpEngine.download(
                 request = request,
                 destination = workspace,
-                processId = processId
+                processId = processId,
+                sourceOverride = job.searchQuery,
+                targetDurationMs = job.targetDurationMs,
+                outputName = spotify?.let {
+                    SpotifyJobs.outputNameFrom(it.first, job.playlistFolder)
+                }
             ) { progress, eta, line ->
                 val clamped = (progress / 100f).coerceIn(0f, 1f)
                 val now = System.currentTimeMillis()
@@ -142,6 +159,20 @@ class DownloadService : Service() {
                         )
                     }
                     notify(named.title, line.trim(), clamped)
+                }
+            }
+
+            // El audio viene de YouTube y hereda su título y su miniatura; aquí se
+            // sustituyen por los datos reales del catálogo antes de moverlo al destino.
+            spotify?.let { (tags, coverUrl) ->
+                repository.updateProgress(
+                    job.id, DownloadStatus.PROCESSING, 1f, 0, "Etiquetando…"
+                )
+                notify(named.title, "Etiquetando…", 1f)
+                val audio = workspace.walkTopDown()
+                    .firstOrNull { it.isFile && Id3Tagger.canTag(it) }
+                if (audio != null) {
+                    Id3Tagger.apply(audio, tags, Id3Tagger.downloadCover(coverUrl))
                 }
             }
 

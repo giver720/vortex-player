@@ -36,6 +36,12 @@ yt-dlp. Vídeo hasta 4K o extracción de audio a MP3/M4A/OPUS/FLAC/WAV. Las list
 reproducción **crean automáticamente su propia carpeta** con las pistas numeradas, y el
 destino lo elige el usuario con el selector de carpetas del sistema.
 
+**Enlaces de Spotify.** Pega una canción, un álbum o una lista y Vórtex lee **sólo los
+metadatos** del catálogo —título, artista, duración y portada—, busca cada tema en
+YouTube Music filtrando por duración y etiqueta el resultado con esos datos. El audio de
+Spotify va cifrado y no se toca: es el mismo enfoque de spotDL. Cada canción entra en la
+cola por separado, así que una lista de ochenta temas no se pierde porque falle uno.
+
 **Aspecto al estilo VLC.** Ajustar, llenar, estirar y relaciones forzadas (16:9, 4:3,
 18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco
 encima de cualquier preset.

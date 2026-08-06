@@ -108,13 +108,32 @@ object YtDlpEngine {
         request: DownloadRequest,
         destination: File,
         processId: String,
+        /**
+         * Qué descargar, si no es [DownloadRequest.url]. Las canciones de Spotify pasan
+         * aquí una búsqueda tipo `ytmsearch5:Artista - Título`: el enlace original sólo
+         * identifica la pista en el catálogo, no un audio descargable.
+         */
+        sourceOverride: String? = null,
+        /** Duración esperada en ms; descarta resultados que se alejen. 0 = sin filtro. */
+        targetDurationMs: Long = 0,
+        /** Nombre de fichero sin extensión. Se usa para no heredar el título del vídeo. */
+        outputName: String? = null,
         onProgress: (Float, Long, String) -> Unit
     ): YoutubeDLResponse = withContext(Dispatchers.IO) {
-        val ytdlp = YoutubeDLRequest(request.url).apply {
+        val ytdlp = YoutubeDLRequest(sourceOverride ?: request.url).apply {
+            if (targetDurationMs > 0) {
+                // ±15 s: suficiente para tolerar intros y silencios finales, y estrecho
+                // para descartar directos, popurrís y bucles de una hora.
+                val seconds = targetDurationMs / 1000
+                val low = (seconds - 15).coerceAtLeast(1)
+                val high = seconds + 15
+                addOption("--match-filter", "duration > $low & duration < $high")
+                // Sin esto, un vídeo descartado por el filtro aborta la búsqueda entera.
+                addOption("--no-abort-on-error")
+            }
             addOption("--no-mtime")
             addOption("--no-warnings")
-            addOption("--restrict-filenames")
-            addOption("-o", outputTemplate(request, destination))
+            addOption("-o", outputTemplate(request, destination, outputName))
 
             if (request.playlist) addOption("--yes-playlist") else addOption("--no-playlist")
 
@@ -152,8 +171,15 @@ object YtDlpEngine {
      * subcarpeta con el nombre de la playlist y numera las pistas, que es exactamente
      * el comportamiento pedido y evita tener que reorganizar ficheros después.
      */
-    private fun outputTemplate(request: DownloadRequest, destination: File): String =
-        if (request.playlist) {
+    private fun outputTemplate(
+        request: DownloadRequest,
+        destination: File,
+        outputName: String?
+    ): String =
+        if (outputName != null) {
+            // Nombre impuesto: viene del catálogo de Spotify, no del título del vídeo.
+            File(destination, "$outputName.%(ext)s").absolutePath
+        } else if (request.playlist) {
             File(
                 destination,
                 "%(playlist_title|Sin lista)s/%(playlist_index|0)03d - %(title)s.%(ext)s"

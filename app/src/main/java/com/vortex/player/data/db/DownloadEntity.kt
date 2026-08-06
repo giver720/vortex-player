@@ -36,6 +36,19 @@ data class DownloadEntity(
     val statusLine: String = "",
     val errorMessage: String? = null,
 
+    /**
+     * Consulta que se pasa a yt-dlp en lugar de [url]. La usan las canciones venidas de
+     * Spotify: el enlace original identifica la pista en el catálogo, pero lo que hay
+     * que descargar es el resultado de buscarla en YouTube Music.
+     */
+    val searchQuery: String? = null,
+
+    /** Duración esperada, para descartar directos y versiones alteradas. 0 = sin filtro. */
+    val targetDurationMs: Long = 0,
+
+    /** Etiquetas a escribir al terminar, serializadas en JSON. `null` = dejar las de yt-dlp. */
+    val tagsJson: String? = null,
+
     /** Carpeta creada para la lista, si el enlace era una playlist. */
     val playlistFolder: String? = null,
     /** Destino final ya resuelto, en forma legible para el usuario. */

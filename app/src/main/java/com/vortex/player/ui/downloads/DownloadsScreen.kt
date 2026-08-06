@@ -83,6 +83,8 @@ fun DownloadsScreen(
     val activeJobId by viewModel.activeJobId.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val engineReady by viewModel.engineReady.collectAsStateWithLifecycle()
+    val isSpotify by viewModel.isSpotifyLink.collectAsStateWithLifecycle()
+    val resolving by viewModel.resolving.collectAsStateWithLifecycle()
 
     LaunchedEffect(message) {
         if (message != null) {
@@ -145,24 +147,31 @@ fun DownloadsScreen(
                 )
             }
 
-            item {
-                SectionLabel("FORMATO")
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    DownloadKind.entries.forEach { option ->
-                        Chip(
-                            label = option.label,
-                            selected = option == kind,
-                            onClick = { viewModel.setKind(option) }
-                        )
+            if (isSpotify) {
+                item { SpotifyNotice(resolving) }
+            }
+
+            if (!isSpotify) {
+                item {
+                    SectionLabel("FORMATO")
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DownloadKind.entries.forEach { option ->
+                            Chip(
+                                label = option.label,
+                                selected = option == kind,
+                                onClick = { viewModel.setKind(option) }
+                            )
+                        }
                     }
                 }
             }
 
             item {
-                if (kind == DownloadKind.VIDEO) {
+                // De Spotify siempre sale audio, así que las opciones de vídeo sobran.
+                if (kind == DownloadKind.VIDEO && !isSpotify) {
                     SectionLabel("CALIDAD DE VÍDEO")
                     ChipRow(
                         options = VideoQuality.entries.map { it.label },
@@ -185,32 +194,35 @@ fun DownloadsScreen(
                 }
             }
 
-            item {
-                SectionLabel("OPCIONES")
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Chip(
-                        label = "LISTA COMPLETA",
-                        selected = playlist,
-                        onClick = viewModel::togglePlaylist
-                    )
-                    if (kind == DownloadKind.VIDEO) {
+            if (!isSpotify) {
+                item {
+                    SectionLabel("OPCIONES")
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Chip(
-                            label = "SUBTÍTULOS",
-                            selected = subtitles,
-                            onClick = viewModel::toggleSubtitles
+                            label = "LISTA COMPLETA",
+                            selected = playlist,
+                            onClick = viewModel::togglePlaylist
+                        )
+                        if (kind == DownloadKind.VIDEO) {
+                            Chip(
+                                label = "SUBTÍTULOS",
+                                selected = subtitles,
+                                onClick = viewModel::toggleSubtitles
+                            )
+                        }
+                    }
+                    if (playlist) {
+                        Text(
+                            text = "Cada lista se guardará en su propia carpeta, con las " +
+                                "pistas numeradas.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VortexPalette.TextLow,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                         )
                     }
-                }
-                if (playlist) {
-                    Text(
-                        text = "Cada lista se guardará en su propia carpeta, con las pistas numeradas.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VortexPalette.TextLow,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    )
                 }
             }
 
@@ -319,6 +331,36 @@ fun DownloadsScreen(
                     .padding(horizontal = 14.dp, vertical = 9.dp)
             )
         }
+    }
+}
+
+/**
+ * Explica qué va a pasar con un enlace de Spotify. Conviene decirlo: el usuario espera
+ * que el audio salga de Spotify, y lo que ocurre es otra cosa.
+ */
+@Composable
+private fun SpotifyNotice(resolving: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Cyan.copy(alpha = 0.4f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Text(
+            text = if (resolving) "LEYENDO SPOTIFY…" else "ENLACE DE SPOTIFY",
+            style = MaterialTheme.typography.labelMedium,
+            color = VortexPalette.Cyan
+        )
+        Text(
+            text = "De Spotify sólo se leen los datos de las canciones: título, artista, " +
+                "duración y portada. El audio se busca después en YouTube Music y se " +
+                "etiqueta con esos datos. Cada canción entra en la cola por separado.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextMid,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 

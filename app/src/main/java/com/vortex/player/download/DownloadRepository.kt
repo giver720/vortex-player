@@ -4,6 +4,8 @@ import android.content.Context
 import com.vortex.player.data.db.DownloadDao
 import com.vortex.player.data.db.DownloadEntity
 import com.vortex.player.data.db.VortexDatabase
+import com.vortex.player.spotify.SpotifyCollection
+import com.vortex.player.spotify.SpotifyJobs
 import kotlinx.coroutines.flow.Flow
 
 class DownloadRepository(private val dao: DownloadDao) {
@@ -23,6 +25,42 @@ class DownloadRepository(private val dao: DownloadDao) {
             embedMetadata = request.embedMetadata
         )
     )
+
+    /**
+     * Expande una colección de Spotify en una entrada de cola por canción.
+     *
+     * Se hace así, y no como un único trabajo, para que el progreso se vea tema a tema y
+     * para poder reintentar sólo el que falle: perder una playlist de ochenta canciones
+     * porque la sesenta no tenía resultado sería inaceptable.
+     */
+    suspend fun enqueueSpotify(
+        collection: SpotifyCollection,
+        base: DownloadRequest
+    ): Int {
+        val folder = collection.folderName
+        collection.tracks.forEach { track ->
+            dao.insert(
+                DownloadEntity(
+                    url = base.url,
+                    title = "${track.artist} - ${track.title}",
+                    uploader = track.artist,
+                    thumbnailUrl = track.coverUrl,
+                    // Spotify siempre baja como audio: pedir vídeo aquí no tendría sentido.
+                    kind = DownloadKind.AUDIO,
+                    audioCodec = base.audioCodec,
+                    audioBitrate = base.audioBitrate,
+                    playlist = false,
+                    embedThumbnail = false,
+                    embedMetadata = false,
+                    searchQuery = SpotifyJobs.searchQuery(track),
+                    targetDurationMs = track.durationMs,
+                    tagsJson = SpotifyJobs.tagsJson(track),
+                    playlistFolder = folder
+                )
+            )
+        }
+        return collection.tracks.size
+    }
 
     suspend fun nextQueued(): DownloadEntity? = dao.nextQueued()
 

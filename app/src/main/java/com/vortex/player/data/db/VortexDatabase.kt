@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistEntity::class,
         PlaylistItemEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -101,6 +101,17 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 → v4 añade lo que necesitan las descargas originadas en Spotify. */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `searchQuery` TEXT")
+                db.execSQL(
+                    "ALTER TABLE `downloads` ADD COLUMN `targetDurationMs` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `tagsJson` TEXT")
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -108,7 +119,7 @@ abstract class VortexDatabase : RoomDatabase() {
                     VortexDatabase::class.java,
                     "vortex.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }
