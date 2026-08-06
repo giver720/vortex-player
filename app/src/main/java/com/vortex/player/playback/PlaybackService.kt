@@ -61,6 +61,12 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, exoPlayer)
             .setSessionActivity(sessionActivityIntent())
             .build()
+            // Sin este registro explícito, Media3 nunca publica la notificación multimedia
+            // y el servicio jamás pasa a primer plano: `onGetSession` sólo se invoca cuando
+            // se conecta un MediaController, y aquí la interfaz usa el Player directamente
+            // a través de PlaybackHub. El resultado era que el sistema mataba la
+            // reproducción con «Stopping service due to app idle» a los dos minutos.
+            .also { addSession(it) }
         PlaybackHub.setPlayer(exoPlayer, exoControls)
         instance = this
         startPositionPersistence()
