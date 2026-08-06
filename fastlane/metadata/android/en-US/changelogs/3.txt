@@ -1,0 +1,10 @@
+Downloads from Spotify links.
+
+• Paste a track, an album or a playlist. Only metadata is read from Spotify — title, artist, album, duration and cover art; its audio is encrypted and never touched. Each song is then searched on YouTube Music.
+• A ±15 s duration filter against the original track, which rules out live versions, sped-up edits and hour-long loops.
+• Playlists are read in blocks of 100 and queued as they arrive, so the first song starts downloading while the rest are still being read.
+• Every song is its own queue entry: retry just the one that failed without losing the rest.
+• When finished, tags are rewritten (title, artist, album, track number) and the album cover is embedded, instead of keeping the YouTube video title.
+• Albums and playlists are saved in their own folder, with numbered tracks.
+
+If Spotify throttles a long playlist, you are told it came out incomplete rather than led to believe it downloaded in full.

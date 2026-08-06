@@ -1,0 +1,10 @@
+Descargas a partir de enlaces de Spotify.
+
+• Pega una canción, un álbum o una lista. De Spotify sólo se leen los metadatos —título, artista, álbum, duración y portada—; su audio va cifrado y no se toca. Cada canción se busca luego en YouTube Music.
+• Filtro de duración de ±15 s sobre la canción original, que descarta directos, versiones aceleradas y bucles de una hora.
+• Las listas se leen por bloques de 100 y se encolan según llegan, así que la primera canción empieza a bajar mientras se leen las demás.
+• Cada canción entra en la cola por separado: puedes reintentar sólo la que falle sin perder el resto.
+• Al terminar se reescriben las etiquetas (título, artista, álbum, número de pista) y se incrusta la portada del álbum, en lugar de quedarse con el título del vídeo de YouTube.
+• Los álbumes y las listas se guardan en su propia carpeta, con las pistas numeradas.
+
+Si Spotify limita la lectura de una lista larga, se avisa de que quedó incompleta en vez de aparentar que se bajó entera.
