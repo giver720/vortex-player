@@ -1,0 +1,15 @@
+SponsorBlock, and a library that notices changes on its own.
+
+SponsorBlock in downloads:
+• Three modes: off, mark segments as chapters so you can skip them by hand, or cut them out of the file.
+• Eight selectable categories: sponsor, self-promo, subscribe reminder, intro, outro, preview, filler and non-music.
+• When removing from video, cuts are forced at the exact frame so two seconds of the sponsor don't slip through.
+• Spotify downloads additionally drop everything that isn't the song, so the MP3 doesn't carry the intro chatter or the sign-off.
+• The policy is stored with each download: retrying repeats what was asked for then, not whatever is configured now.
+
+Library:
+• Notices content changes by itself: downloads, new files from other apps, deletions from a file manager. Debounced, so a fifty-song download triggers one rescan instead of fifty.
+• Pull down to rescan manually.
+• A menu switch to turn automatic detection off.
+
+• yt-dlp updates itself once a day before processing the queue.

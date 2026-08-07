@@ -24,6 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
@@ -61,6 +63,9 @@ import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DestinationStore
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadStatus
+import com.vortex.player.download.SponsorCategory
+import com.vortex.player.download.SponsorMode
+import com.vortex.player.download.SponsorSettings
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.theme.VortexPalette
@@ -95,6 +100,7 @@ fun DownloadsScreen(
     val resolving by viewModel.resolving.collectAsStateWithLifecycle()
     val partialWarning by viewModel.partialWarning.collectAsStateWithLifecycle()
     val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
+    val sponsorSettings by viewModel.sponsor.collectAsStateWithLifecycle()
 
     var confirmClearAll by remember { mutableStateOf(false) }
 
@@ -240,6 +246,14 @@ fun DownloadsScreen(
                         )
                     }
                 }
+            }
+
+            item {
+                SponsorBlockSection(
+                    settings = sponsorSettings,
+                    onMode = viewModel::setSponsorMode,
+                    onToggleCategory = viewModel::toggleSponsorCategory
+                )
             }
 
             item {
@@ -390,6 +404,105 @@ fun DownloadsScreen(
  * Explica qué va a pasar con un enlace de Spotify. Conviene decirlo: el usuario espera
  * que el audio salga de Spotify, y lo que ocurre es otra cosa.
  */
+/**
+ * SponsorBlock: qué hacer con los tramos que la comunidad ha marcado en el vídeo.
+ *
+ * Las categorías sólo aparecen si hay un modo activo; enseñar ocho casillas que no hacen
+ * nada porque el modo está desactivado sería ruido.
+ */
+@Composable
+private fun SponsorBlockSection(
+    settings: SponsorSettings,
+    onMode: (SponsorMode) -> Unit,
+    onToggleCategory: (SponsorCategory) -> Unit
+) {
+    Column {
+        SectionLabel("SPONSORBLOCK")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SponsorMode.entries.forEach { mode ->
+                Chip(
+                    label = mode.label,
+                    selected = mode == settings.mode,
+                    onClick = { onMode(mode) }
+                )
+            }
+        }
+
+        Text(
+            text = settings.mode.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+        )
+
+        if (settings.mode == SponsorMode.OFF) return@Column
+
+        Text(
+            text = "CATEGORÍAS",
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp)
+        )
+
+        SponsorCategory.entries.forEach { category ->
+            val checked = category in settings.categories
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleCategory(category) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = if (checked) {
+                        Icons.Filled.CheckBox
+                    } else {
+                        Icons.Filled.CheckBoxOutlineBlank
+                    },
+                    contentDescription = null,
+                    tint = if (checked) VortexPalette.Neon else VortexPalette.TextLow,
+                    modifier = Modifier.size(19.dp)
+                )
+                Column {
+                    Text(
+                        text = category.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (checked) VortexPalette.TextHigh else VortexPalette.TextMid
+                    )
+                    Text(
+                        text = category.hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VortexPalette.TextLow
+                    )
+                }
+            }
+        }
+
+        if (settings.categories.isEmpty()) {
+            Text(
+                text = "Sin ninguna categoría marcada, SponsorBlock no hará nada.",
+                style = MaterialTheme.typography.bodySmall,
+                color = VortexPalette.Amber,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+            )
+        }
+
+        Text(
+            text = "Sólo se aplica a YouTube. En otras fuentes se ignora sin dar error.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+        )
+    }
+}
+
 /** Acciones que afectan a la cola entera, agrupadas para no llenar la cabecera. */
 @Composable
 private fun QueueMenu(

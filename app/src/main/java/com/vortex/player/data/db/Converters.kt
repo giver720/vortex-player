@@ -5,6 +5,7 @@ import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadStatus
+import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.VideoQuality
 
 /**
@@ -28,6 +29,10 @@ class Converters {
     @TypeConverter fun bitrateToString(value: AudioBitrate): String = value.name
     @TypeConverter fun stringToBitrate(value: String): AudioBitrate =
         runCatching { AudioBitrate.valueOf(value) }.getOrDefault(AudioBitrate.BEST)
+
+    @TypeConverter fun sponsorModeToString(value: SponsorMode): String = value.name
+    @TypeConverter fun stringToSponsorMode(value: String): SponsorMode =
+        runCatching { SponsorMode.valueOf(value) }.getOrDefault(SponsorMode.OFF)
 
     @TypeConverter fun statusToString(value: DownloadStatus): String = value.name
     @TypeConverter fun stringToStatus(value: String): DownloadStatus =

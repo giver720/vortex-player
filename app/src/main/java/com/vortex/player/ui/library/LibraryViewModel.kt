@@ -85,6 +85,15 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() = repository.refresh()
 
+    /** Hay un reescaneo en curso; alimenta el indicador de tirar para refrescar. */
+    val refreshing: StateFlow<Boolean> = repository.refreshing
+
+    fun toggleAutoRefresh() {
+        viewModelScope.launch {
+            LibraryPreferences.setAutoRefresh(getApplication(), !prefs.value.autoRefresh)
+        }
+    }
+
     fun consumeMessage() { _message.value = null }
     fun consumeDeleteRequest() { _deleteRequest.value = null }
 

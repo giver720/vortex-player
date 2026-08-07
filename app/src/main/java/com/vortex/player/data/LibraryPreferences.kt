@@ -23,7 +23,13 @@ enum class ViewMode { GRID, LIST }
 data class LibraryPrefs(
     val sortField: SortField = SortField.DATE,
     val descending: Boolean = true,
-    val viewMode: ViewMode = ViewMode.GRID
+    val viewMode: ViewMode = ViewMode.GRID,
+    /**
+     * Reescanear solo cuando el sistema avisa de que los medios han cambiado. Se puede
+     * apagar para quien tenga decenas de miles de ficheros y prefiera controlar cuándo
+     * se paga ese coste.
+     */
+    val autoRefresh: Boolean = true
 )
 
 /** Cómo quiere el usuario ver su biblioteca. Se recuerda entre sesiones. */
@@ -32,6 +38,7 @@ object LibraryPreferences {
     private val SORT_FIELD = stringPreferencesKey("sort_field")
     private val SORT_DESC = booleanPreferencesKey("sort_desc")
     private val VIEW_MODE = stringPreferencesKey("view_mode")
+    private val AUTO_REFRESH = booleanPreferencesKey("auto_refresh")
 
     fun observe(context: Context): Flow<LibraryPrefs> =
         context.libraryDataStore.data.map { prefs ->
@@ -42,9 +49,14 @@ object LibraryPreferences {
                 descending = prefs[SORT_DESC] ?: true,
                 viewMode = prefs[VIEW_MODE]
                     ?.let { name -> runCatching { ViewMode.valueOf(name) }.getOrNull() }
-                    ?: ViewMode.GRID
+                    ?: ViewMode.GRID,
+                autoRefresh = prefs[AUTO_REFRESH] ?: true
             )
         }
+
+    suspend fun setAutoRefresh(context: Context, enabled: Boolean) {
+        context.libraryDataStore.edit { it[AUTO_REFRESH] = enabled }
+    }
 
     suspend fun setSort(context: Context, field: SortField, descending: Boolean) {
         context.libraryDataStore.edit {

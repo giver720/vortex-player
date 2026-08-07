@@ -46,6 +46,27 @@ object EnginePreferences {
         return System.currentTimeMillis() - last > INTERVAL_MS
     }
 
+    private val SPONSOR_MODE = stringPreferencesKey("sponsor_mode")
+    private val SPONSOR_CATEGORIES = stringPreferencesKey("sponsor_categories")
+
+    fun sponsorSettings(context: Context): Flow<SponsorSettings> =
+        context.engineDataStore.data.map { prefs ->
+            val mode = prefs[SPONSOR_MODE]
+                ?.let { runCatching { SponsorMode.valueOf(it) }.getOrNull() }
+                ?: SponsorMode.OFF
+            val categories = prefs[SPONSOR_CATEGORIES]
+                ?.let { SponsorCategory.parse(it) }
+                ?: SponsorCategory.DEFAULT_VIDEO
+            SponsorSettings(mode, categories)
+        }
+
+    suspend fun setSponsor(context: Context, settings: SponsorSettings) {
+        context.engineDataStore.edit {
+            it[SPONSOR_MODE] = settings.mode.name
+            it[SPONSOR_CATEGORIES] = settings.categoriesCsv
+        }
+    }
+
     suspend fun record(context: Context, result: String) {
         context.engineDataStore.edit {
             it[LAST_UPDATE_AT] = System.currentTimeMillis()

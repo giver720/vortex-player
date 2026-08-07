@@ -23,7 +23,9 @@ class DownloadRepository(private val dao: DownloadDao) {
             playlist = request.playlist,
             embedThumbnail = request.embedThumbnail,
             embedSubtitles = request.embedSubtitles,
-            embedMetadata = request.embedMetadata
+            embedMetadata = request.embedMetadata,
+            sponsorMode = request.sponsor.mode,
+            sponsorCategories = request.sponsor.categoriesCsv
         )
     )
 
@@ -67,7 +69,9 @@ class DownloadRepository(private val dao: DownloadDao) {
                     searchQuery = SpotifyJobs.searchQuery(track),
                     targetDurationMs = track.durationMs,
                     tagsJson = SpotifyJobs.tagsJson(track),
-                    playlistFolder = folder
+                    playlistFolder = folder,
+                    sponsorMode = base.sponsor.mode,
+                    sponsorCategories = base.sponsor.categoriesCsv
                 )
             )
         }
@@ -147,7 +151,11 @@ class DownloadRepository(private val dao: DownloadDao) {
         playlist = playlist,
         embedThumbnail = embedThumbnail,
         embedSubtitles = embedSubtitles,
-        embedMetadata = embedMetadata
+        embedMetadata = embedMetadata,
+        sponsor = SponsorSettings(
+            mode = sponsorMode,
+            categories = SponsorCategory.parse(sponsorCategories)
+        )
     )
 
     companion object {

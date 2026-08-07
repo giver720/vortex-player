@@ -12,6 +12,10 @@ import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadRepository
 import com.vortex.player.download.DownloadRequest
 import com.vortex.player.download.DownloadService
+import com.vortex.player.download.EnginePreferences
+import com.vortex.player.download.SponsorCategory
+import com.vortex.player.download.SponsorMode
+import com.vortex.player.download.SponsorSettings
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.download.YtDlpEngine
 import com.vortex.player.spotify.SpotifyKind
@@ -57,6 +61,34 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _embedSubtitles = MutableStateFlow(false)
     val embedSubtitles: StateFlow<Boolean> = _embedSubtitles.asStateFlow()
+
+    val sponsor: StateFlow<SponsorSettings> = EnginePreferences.sponsorSettings(app)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SponsorSettings())
+
+    fun setSponsorMode(mode: SponsorMode) {
+        viewModelScope.launch {
+            val current = sponsor.value
+            // Al activarlo por primera vez sin categorías elegidas no pasaría nada, así
+            // que se siembran las habituales en lugar de dejar un ajuste inerte.
+            val categories = current.categories.ifEmpty { SponsorCategory.DEFAULT_VIDEO }
+            EnginePreferences.setSponsor(
+                getApplication(),
+                current.copy(mode = mode, categories = categories)
+            )
+        }
+    }
+
+    fun toggleSponsorCategory(category: SponsorCategory) {
+        viewModelScope.launch {
+            val current = sponsor.value
+            val next = if (category in current.categories) {
+                current.categories - category
+            } else {
+                current.categories + category
+            }
+            EnginePreferences.setSponsor(getApplication(), current.copy(categories = next))
+        }
+    }
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -139,7 +171,8 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                     audioCodec = _codec.value,
                     audioBitrate = _bitrate.value,
                     playlist = _playlist.value,
-                    embedSubtitles = _embedSubtitles.value
+                    embedSubtitles = _embedSubtitles.value,
+                    sponsor = sponsor.value
                 )
             )
             DownloadService.start(getApplication())
@@ -157,11 +190,20 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             _resolving.value = true
             _message.value = "Leyendo la lista en Spotify…"
 
+            val current = sponsor.value
             val base = DownloadRequest(
                 url = link,
                 kind = DownloadKind.AUDIO,
                 audioCodec = _codec.value,
-                audioBitrate = _bitrate.value
+                audioBitrate = _bitrate.value,
+                // El audio sale de un vídeo musical: si SponsorBlock está activo conviene
+                // quitar además lo que no es la canción, o el MP3 arrastra la charla
+                // previa y la despedida del final.
+                sponsor = if (current.isActive) {
+                    current.copy(categories = current.categories + SponsorCategory.DEFAULT_AUDIO)
+                } else {
+                    current
+                }
             )
 
             var queued = 0

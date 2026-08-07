@@ -158,6 +158,8 @@ object YtDlpEngine {
                 }
             }
 
+            applySponsorBlock(this, request)
+
             if (request.embedThumbnail) addOption("--embed-thumbnail")
             if (request.embedMetadata) addOption("--embed-metadata")
             if (request.embedSubtitles && request.kind == DownloadKind.VIDEO) {
@@ -169,6 +171,30 @@ object YtDlpEngine {
 
         YoutubeDL.getInstance().execute(ytdlp, processId) { progress, eta, line ->
             onProgress(progress, eta, line)
+        }
+    }
+
+    /**
+     * Traduce la política de SponsorBlock a opciones de yt-dlp, que consulta la API por
+     * su cuenta. Sólo funciona con YouTube: en cualquier otra fuente estas opciones se
+     * ignoran sin dar error, así que no hace falta condicionarlas por sitio.
+     */
+    private fun applySponsorBlock(request: YoutubeDLRequest, download: DownloadRequest) {
+        val sponsor = download.sponsor
+        if (!sponsor.isActive) return
+
+        when (sponsor.mode) {
+            SponsorMode.REMOVE -> {
+                request.addOption("--sponsorblock-remove", sponsor.categoriesCsv)
+                // Sin esto los cortes caen en el fotograma clave más cercano y se cuelan
+                // uno o dos segundos del segmento. Obliga a recodificar el tramo afectado,
+                // pero recortar mal es peor que tardar algo más.
+                if (download.kind == DownloadKind.VIDEO) {
+                    request.addOption("--force-keyframes-at-cuts")
+                }
+            }
+            SponsorMode.MARK -> request.addOption("--sponsorblock-mark", sponsor.categoriesCsv)
+            SponsorMode.OFF -> Unit
         }
     }
 

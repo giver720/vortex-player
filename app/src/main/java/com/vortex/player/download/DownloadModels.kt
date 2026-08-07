@@ -56,7 +56,8 @@ data class DownloadRequest(
     val playlist: Boolean = true,
     val embedThumbnail: Boolean = true,
     val embedSubtitles: Boolean = false,
-    val embedMetadata: Boolean = true
+    val embedMetadata: Boolean = true,
+    val sponsor: SponsorSettings = SponsorSettings()
 )
 
 enum class DownloadStatus {

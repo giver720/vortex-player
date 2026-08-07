@@ -1,6 +1,12 @@
 package com.vortex.player.data
 
 import android.content.Context
+import android.database.ContentObserver
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
+import android.util.Log
 import com.vortex.player.data.db.MediaStateDao
 import com.vortex.player.data.db.MediaStateEntity
 import com.vortex.player.data.db.PlaylistDao
@@ -10,8 +16,12 @@ import com.vortex.player.data.db.VortexDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -95,8 +105,63 @@ class MediaRepository(
             }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    /** Un reescaneo está en curso; la interfaz lo usa para el indicador de refresco. */
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing
+
     fun refresh() {
-        scope.launch { scanned.value = scanner.scanAll() }
+        scope.launch {
+            _refreshing.value = true
+            try {
+                scanned.value = scanner.scanAll()
+            } finally {
+                _refreshing.value = false
+            }
+        }
+    }
+
+    /**
+     * Vigila la mediateca del sistema y reescanea cuando cambia.
+     *
+     * Android avisa por cada fichero, así que una descarga de cincuenta canciones
+     * dispararía cincuenta reescaneos completos. El antirrebote agrupa la ráfaga en uno
+     * solo, un segundo y medio después del último aviso. Esto cubre a la vez lo que se
+     * descarga desde Vórtex, lo que llega por otras apps y lo que se borra desde el
+     * explorador de archivos.
+     */
+    private fun observeMediaStore() {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                // Sin traza aquí: durante una descarga de cien canciones esto se dispara
+                // cientos de veces y ahogaría el log. La traza va tras el antirrebote.
+                changes.tryEmit(Unit)
+            }
+        }
+        // Se observa la raíz del proveedor y no `…/external/video/media`, porque Android
+        // notifica con el nombre real del volumen (`external_primary`), que no es
+        // descendiente de `external`: registrándolo ahí no llegaba ni un solo aviso.
+        context.contentResolver.registerContentObserver(
+            MediaStore.AUTHORITY_URI, true, observer
+        )
+
+        scope.launch {
+            changes.debounce(1_500).collect {
+                if (LibraryPreferences.observe(context).first().autoRefresh) {
+                    Log.d(TAG, "Reescaneando la biblioteca por cambio en MediaStore")
+                    refresh()
+                }
+            }
+        }
+    }
+
+    private val changes = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    init {
+        observeMediaStore()
     }
 
     // ------------------------------------------------------------ listas
@@ -200,6 +265,8 @@ class MediaRepository(
     }
 
     companion object {
+        private const val TAG = "MediaRepository"
+
         @Volatile
         private var instance: MediaRepository? = null
 

@@ -1,0 +1,15 @@
+SponsorBlock y biblioteca que se entera sola de los cambios.
+
+SponsorBlock en las descargas:
+• Tres modos: desactivado, marcar los segmentos como capítulos para saltarlos a mano, o eliminarlos del archivo.
+• Ocho categorías elegibles: patrocinio, autopromoción, suscríbete, intro, outro, avance, relleno y lo no musical.
+• Al eliminar en vídeo se fuerzan los cortes en el fotograma exacto, para que no se cuelen dos segundos del patrocinio.
+• En descargas de Spotify se quita además todo lo que no es la canción, así el MP3 no arrastra la charla previa ni la despedida.
+• La política se guarda con cada descarga: al reintentar se repite lo que se pidió entonces, no lo que esté configurado ahora.
+
+Biblioteca:
+• Detecta sola cuando cambia el contenido: descargas, ficheros nuevos de otras apps, borrados desde el explorador. Con antirrebote, así una descarga de cincuenta canciones provoca un reescaneo y no cincuenta.
+• Gesto de tirar hacia abajo para reescanear a mano.
+• Interruptor en el menú para desactivar la detección automática.
+
+• yt-dlp se actualiza solo una vez al día antes de procesar la cola.

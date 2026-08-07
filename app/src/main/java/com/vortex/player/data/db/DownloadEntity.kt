@@ -6,6 +6,7 @@ import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadStatus
+import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.VideoQuality
 
 /**
@@ -28,6 +29,14 @@ data class DownloadEntity(
     val embedThumbnail: Boolean = true,
     val embedSubtitles: Boolean = false,
     val embedMetadata: Boolean = true,
+
+    /**
+     * Política de SponsorBlock con la que se lanzó el trabajo. Se guarda en la fila y no
+     * se lee de los ajustes al reintentar: si el usuario cambia sus preferencias, una
+     * descarga que reintente debe repetir lo que se pidió entonces, no lo de ahora.
+     */
+    val sponsorMode: SponsorMode = SponsorMode.OFF,
+    val sponsorCategories: String = "",
 
     val status: DownloadStatus = DownloadStatus.QUEUED,
     val progress: Float = 0f,

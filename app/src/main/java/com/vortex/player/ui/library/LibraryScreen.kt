@@ -34,6 +34,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
@@ -42,6 +44,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,7 +72,7 @@ import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 
-@OptIn(ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
@@ -94,6 +98,7 @@ fun LibraryScreen(
     val results by viewModel.results.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val deleteRequest by viewModel.deleteRequest.collectAsStateWithLifecycle()
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
 
     var showPlaylistDialog by remember { mutableStateOf(false) }
 
@@ -156,7 +161,9 @@ fun LibraryScreen(
                     onRefresh = viewModel::refresh,
                     onOpenDownloads = onOpenDownloads,
                     appVersion = appVersion,
-                    onCheckUpdates = onCheckUpdates
+                    onCheckUpdates = onCheckUpdates,
+                    autoRefresh = prefs.autoRefresh,
+                    onToggleAutoRefresh = viewModel::toggleAutoRefresh
                 )
                 updateBanner()
             }
@@ -186,6 +193,11 @@ fun LibraryScreen(
             val bottomPadding = 108.dp +
                 WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize()
+            ) {
             when {
                 library.loading -> LoadingState()
 
@@ -248,6 +260,7 @@ fun LibraryScreen(
                         )
                     }
                 }
+            }
             }
         }
 
@@ -408,7 +421,9 @@ private fun VortexHeader(
     onRefresh: () -> Unit,
     onOpenDownloads: () -> Unit,
     appVersion: String,
-    onCheckUpdates: () -> Unit
+    onCheckUpdates: () -> Unit,
+    autoRefresh: Boolean,
+    onToggleAutoRefresh: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -449,6 +464,37 @@ private fun VortexHeader(
                 onDismissRequest = { menuOpen = false },
                 containerColor = VortexPalette.GraphiteRaised
             ) {
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (autoRefresh) {
+                                Icons.Filled.CheckBox
+                            } else {
+                                Icons.Filled.CheckBoxOutlineBlank
+                            },
+                            contentDescription = null,
+                            tint = if (autoRefresh) VortexPalette.Neon else VortexPalette.TextLow
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Detectar cambios solo",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = VortexPalette.TextHigh
+                            )
+                            Text(
+                                "Reescanea al descargar o cambiar carpetas",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = VortexPalette.TextLow
+                            )
+                        }
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onToggleAutoRefresh()
+                    }
+                )
                 DropdownMenuItem(
                     text = {
                         Text(

@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistEntity::class,
         PlaylistItemEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -112,6 +112,18 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v4 → v5 guarda la política de SponsorBlock con la que se lanzó cada descarga. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `downloads` ADD COLUMN `sponsorMode` TEXT NOT NULL DEFAULT 'OFF'"
+                )
+                db.execSQL(
+                    "ALTER TABLE `downloads` ADD COLUMN `sponsorCategories` TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -119,7 +131,9 @@ abstract class VortexDatabase : RoomDatabase() {
                     VortexDatabase::class.java,
                     "vortex.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5
+                    )
                     .build()
                     .also { instance = it }
             }
