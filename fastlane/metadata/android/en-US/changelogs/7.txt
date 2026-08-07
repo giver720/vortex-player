@@ -1,0 +1,10 @@
+Pick what to download from a playlist, and Vórtex knows what you already have.
+
+• Pasting a Spotify link now shows the full track list with checkboxes instead of queueing blindly. Tick what you want and confirm.
+• Anything already downloaded arrives unticked and flagged, so resyncing a playlist is just pasting the link and confirming: no repeated work, no duplicate files.
+• Buttons for select all, none, and only what's missing.
+• The list fills in blocks, so on a long playlist you can start looking while the remaining pages arrive.
+
+How it recognises what you already have: by the track identifier, which survives renaming or moving the file; and failing that, by the file name in your library, which survives clearing app data and recognises songs you downloaded before this feature existed.
+
+• Fixed filename sanitising, which turned "04 - Artist - Title" into "04___Artist___Title". Spotify downloads were coming out full of underscores.

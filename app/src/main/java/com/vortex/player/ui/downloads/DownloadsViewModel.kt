@@ -18,9 +18,12 @@ import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.SponsorSettings
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.download.YtDlpEngine
+import com.vortex.player.data.MediaRepository
+import com.vortex.player.spotify.PlaylistSelection
 import com.vortex.player.spotify.SpotifyKind
 import com.vortex.player.spotify.SpotifyResolver
 import com.vortex.player.spotify.SpotifyResult
+import com.vortex.player.spotify.markOwned
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
@@ -185,6 +188,64 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
      * Resuelve el enlace contra el catálogo de Spotify y mete una entrada por canción.
      * De Spotify sólo salen metadatos; el audio se busca luego en YouTube Music.
      */
+    /** Lista resuelta y a la espera de que el usuario elija qué bajar. */
+    private val _selection = MutableStateFlow<PlaylistSelection?>(null)
+    val selection: StateFlow<PlaylistSelection?> = _selection.asStateFlow()
+
+    fun toggleTrack(index: Int) {
+        _selection.value = _selection.value?.toggle(index)
+    }
+
+    fun selectAllTracks(selected: Boolean) {
+        _selection.value = _selection.value?.withAll(selected)
+    }
+
+    fun selectOnlyMissing() {
+        _selection.value = _selection.value?.withOnlyMissing()
+    }
+
+    fun cancelSelection() {
+        _selection.value = null
+    }
+
+    /** Encola lo que quedó marcado y cierra la pantalla de selección. */
+    fun confirmSelection() {
+        val selection = _selection.value ?: return
+        val chosen = selection.selectedTracks()
+        if (chosen.isEmpty()) {
+            _message.value = "No has marcado ninguna canción"
+            return
+        }
+        viewModelScope.launch {
+            val current = sponsor.value
+            val count = repository.enqueueSpotifyTracks(
+                tracks = chosen,
+                folder = selection.folderName,
+                base = DownloadRequest(
+                    url = selection.sourceUrl,
+                    kind = DownloadKind.AUDIO,
+                    audioCodec = _codec.value,
+                    audioBitrate = _bitrate.value,
+                    sponsor = if (current.isActive) {
+                        current.copy(
+                            categories = current.categories + SponsorCategory.DEFAULT_AUDIO
+                        )
+                    } else {
+                        current
+                    }
+                )
+            )
+            DownloadService.start(getApplication())
+            _selection.value = null
+            _url.value = ""
+            _message.value = if (count == 1) {
+                "1 canción en la cola"
+            } else {
+                "$count canciones en la cola"
+            }
+        }
+    }
+
     private fun enqueueSpotify(link: String) {
         viewModelScope.launch {
             _resolving.value = true
@@ -206,31 +267,47 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                 }
             )
 
-            var queued = 0
+            // Lo que ya se bajó alguna vez, por identificador de pista y por nombre de
+            // archivo presente en la biblioteca. Se consulta una sola vez, no por canción.
+            val completedIds = repository.completedSourceIds()
+            val libraryNames = MediaRepository.get(getApplication()).library.value.entries
+                .map { it.displayName.substringBeforeLast('.').lowercase() }
+                .toSet()
 
-            // Cada bloque se encola en cuanto llega; el servicio arranca con el primero,
-            // así que en una lista larga la primera canción ya se está bajando mientras
-            // se leen las demás.
+            // La pantalla de selección se llena por bloques: en una lista de trescientas
+            // ya se puede empezar a mirar mientras llegan las demás páginas.
             val result = SpotifyResolver.resolve(link) { folder, page ->
-                val first = queued == 0
-                queued += repository.enqueueSpotifyTracks(page, folder, base)
-                _message.value = "$queued canciones en la cola…"
-                if (first) DownloadService.start(getApplication())
+                val marked = markOwned(page, folder, completedIds, libraryNames)
+                val current = _selection.value
+                _selection.value = if (current == null) {
+                    PlaylistSelection(
+                        name = folder ?: page.firstOrNull()?.title.orEmpty(),
+                        kind = if (folder == null) SpotifyKind.TRACK else SpotifyKind.PLAYLIST,
+                        coverUrl = page.firstOrNull()?.coverUrl,
+                        tracks = marked,
+                        sourceUrl = link
+                    )
+                } else {
+                    current.copy(tracks = current.tracks + marked)
+                }
             }
 
             when (result) {
-                is SpotifyResult.Error -> _message.value = result.message
+                is SpotifyResult.Error -> {
+                    _message.value = result.message
+                    _selection.value = null
+                }
                 is SpotifyResult.Ok -> {
                     val collection = result.collection
-                    if (queued > 0) _url.value = ""
-                    _message.value = buildString {
-                        append(if (queued == 1) "1 canción" else "$queued canciones")
-                        if (collection.kind != SpotifyKind.TRACK) {
-                            append(" de «${collection.name}»")
-                        }
-                        append(" en la cola")
-                    }
+                    _selection.value = _selection.value?.copy(
+                        name = collection.name,
+                        kind = collection.kind,
+                        coverUrl = collection.coverUrl,
+                        resolving = false,
+                        partial = collection.partial
+                    )
                     _partialWarning.value = collection.partial
+                    _message.value = null
                 }
             }
             _resolving.value = false

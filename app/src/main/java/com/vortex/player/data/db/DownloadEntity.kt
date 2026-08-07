@@ -52,6 +52,13 @@ data class DownloadEntity(
      */
     val searchQuery: String? = null,
 
+    /**
+     * Identificador de la pista en su catálogo de origen. Es lo que permite reconocer que
+     * una canción ya se bajó al volver a resolver la misma lista, aunque el fichero se
+     * haya renombrado o movido de sitio.
+     */
+    val sourceId: String? = null,
+
     /** Duración esperada, para descartar directos y versiones alteradas. 0 = sin filtro. */
     val targetDurationMs: Long = 0,
 

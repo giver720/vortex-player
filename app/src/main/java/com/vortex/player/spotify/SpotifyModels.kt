@@ -2,6 +2,11 @@ package com.vortex.player.spotify
 
 /** Una canción tal y como la describe Spotify. El audio nunca sale de aquí. */
 data class SpotifyTrack(
+    /**
+     * Identificador de la pista en el catálogo. Es lo que permite saber que una canción
+     * ya se descargó aunque el fichero se haya renombrado o movido después.
+     */
+    val id: String?,
     val title: String,
     val artist: String,
     val album: String,

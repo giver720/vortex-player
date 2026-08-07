@@ -89,6 +89,7 @@ object SpotifyResolver {
         if (kind == SpotifyKind.TRACK || trackList == null || trackList.length() == 0) {
             val title = entity.optString("title").ifBlank { name }
             val track = SpotifyTrack(
+                id = entity.optString("id").takeIf { it.isNotBlank() } ?: id,
                 title = title,
                 artist = artistsOf(entity).ifBlank { entity.optString("subtitle") },
                 album = entity.optString("albumName").ifBlank { title },
@@ -213,6 +214,7 @@ object SpotifyResolver {
 
                 val album = track.optJSONObject("album")
                 batch += SpotifyTrack(
+                    id = track.optString("id").takeIf { it.isNotBlank() },
                     title = title,
                     artist = artistsOf(track),
                     // Aquí sí llega el álbum de verdad, no el nombre de la lista.
@@ -252,6 +254,10 @@ object SpotifyResolver {
                 if (title.isBlank()) continue
                 add(
                     SpotifyTrack(
+                        // El embed da el URI completo: "spotify:track:XXXX".
+                        id = item.optString("uri").substringAfterLast(':').takeIf {
+                            it.isNotBlank() && it != item.optString("uri")
+                        },
                         title = title,
                         // En el embed el artista viene en `subtitle`, ya combinado si
                         // la canción tiene varios intérpretes.

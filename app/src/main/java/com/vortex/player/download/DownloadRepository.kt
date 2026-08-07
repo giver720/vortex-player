@@ -66,6 +66,7 @@ class DownloadRepository(private val dao: DownloadDao) {
                     playlist = false,
                     embedThumbnail = false,
                     embedMetadata = false,
+                    sourceId = track.id,
                     searchQuery = SpotifyJobs.searchQuery(track),
                     targetDurationMs = track.durationMs,
                     tagsJson = SpotifyJobs.tagsJson(track),
@@ -77,6 +78,8 @@ class DownloadRepository(private val dao: DownloadDao) {
         }
         return tracks.size
     }
+
+    suspend fun completedSourceIds(): Set<String> = dao.completedSourceIds().toSet()
 
     suspend fun nextQueued(): DownloadEntity? = dao.nextQueued()
 

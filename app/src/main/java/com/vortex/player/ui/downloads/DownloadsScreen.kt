@@ -1,5 +1,6 @@
 package com.vortex.player.ui.downloads
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -101,6 +102,22 @@ fun DownloadsScreen(
     val partialWarning by viewModel.partialWarning.collectAsStateWithLifecycle()
     val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
     val sponsorSettings by viewModel.sponsor.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
+
+    // Mientras haya una lista resuelta esperando decisión, ocupa la pantalla entera: es
+    // el paso siguiente del mismo flujo, no una capa encima de la cola.
+    selection?.let { pending ->
+        BackHandler { viewModel.cancelSelection() }
+        PlaylistSelectionScreen(
+            selection = pending,
+            onToggle = viewModel::toggleTrack,
+            onSelectAll = viewModel::selectAllTracks,
+            onOnlyMissing = viewModel::selectOnlyMissing,
+            onConfirm = viewModel::confirmSelection,
+            onCancel = viewModel::cancelSelection
+        )
+        return
+    }
 
     var confirmClearAll by remember { mutableStateOf(false) }
 

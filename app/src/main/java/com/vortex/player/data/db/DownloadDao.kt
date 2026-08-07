@@ -67,6 +67,10 @@ interface DownloadDao {
     @Query("SELECT COUNT(*) FROM downloads WHERE status IN ('FAILED','CANCELLED')")
     fun observeFailedCount(): Flow<Int>
 
+    /** Identificadores de pista que ya se descargaron con éxito alguna vez. */
+    @Query("SELECT sourceId FROM downloads WHERE status = 'COMPLETED' AND sourceId IS NOT NULL")
+    suspend fun completedSourceIds(): List<String>
+
     /**
      * Si el proceso muere a mitad, las descargas quedan colgadas en un estado activo.
      * Al arrancar se rescatan devolviéndolas a la cola.

@@ -1,0 +1,10 @@
+Eliges qué bajar de una lista, y Vórtex sabe lo que ya tienes.
+
+• Al pegar un enlace de Spotify aparece la lista completa con casillas en vez de encolarse a ciegas. Marcas lo que quieras y confirmas.
+• Lo ya descargado llega desmarcado y señalado, así que resincronizar una lista es pegar el enlace y confirmar: no se repite trabajo ni se duplican archivos.
+• Botones de marcar todas, ninguna y sólo lo que falta.
+• La lista se llena por bloques, así que en una playlist larga se puede empezar a mirar mientras llegan las demás páginas.
+
+Cómo reconoce lo ya descargado: por el identificador de la pista, que aguanta que renombres o muevas el archivo; y si eso falla, por el nombre del archivo en la biblioteca, que sobrevive a borrar los datos de la app y reconoce lo que bajaste antes de que existiera esta función.
+
+• Corregido el saneado de nombres, que convertía "04 - Artista - Título" en "04___Artista___Título". Las descargas de Spotify salían con el nombre lleno de guiones bajos.
