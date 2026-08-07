@@ -1,0 +1,8 @@
+El procesado de audio puede aplicarse a todo el dispositivo.
+
+• Nuevo selector "Aplicar a": sólo Vórtex, o todo el sistema. En modo global el ecualizador, el volumen extra, el nivelador y los graves afectan también a YouTube, Spotify y cualquier otra app.
+• Android permite esto pero lo desaconseja, y algunos fabricantes lo bloquean sin dar error. Vórtex lo intenta y te dice si tu dispositivo lo aceptó, en lugar de prometerlo.
+
+Correcciones importantes:
+• El refuerzo de graves dejaba de sonar todo al activarlo. Se aplicaba como un efecto suelto encadenado sobre el resto, y algunos dispositivos rompían la ruta de audio. Ahora los graves son parte del propio ecualizador: una sola cadena, sin conflicto, y además el limitador los controla.
+• Los deslizadores estaban desactivados hasta encender el interruptor de cada efecto, pero encenderlo con el valor a cero no hacía nada, así que parecían muertos. Ahora se mueven directamente y el efecto se enciende solo.

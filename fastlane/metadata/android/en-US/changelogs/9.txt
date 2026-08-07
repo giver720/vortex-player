@@ -1,0 +1,8 @@
+Audio processing can now apply to the whole device.
+
+• New "Apply to" selector: Vórtex only, or the whole system. In global mode the equalizer, extra volume, leveller and bass also affect YouTube, Spotify and any other app.
+• Android allows this but discourages it, and some manufacturers block it without any error. Vórtex tries and tells you whether your device accepted it, rather than promising.
+
+Important fixes:
+• Bass boost silenced all audio when switched on. It was applied as a separate effect chained on top of the rest, and some devices broke the audio path. Bass is now part of the equalizer itself: a single chain, no conflict, and the limiter keeps it in check.
+• Sliders were disabled until you switched each effect on, but switching it on at zero did nothing, so they seemed dead. They now move directly and turn the effect on themselves.

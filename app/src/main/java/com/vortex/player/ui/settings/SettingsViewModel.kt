@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vortex.player.audio.AudioCapabilities
 import com.vortex.player.audio.AudioPreferences
+import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EQ_BANDS
 import com.vortex.player.audio.EQ_MAX_DB
@@ -31,6 +32,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setEnabled(enabled: Boolean) = update { it.copy(enabled = enabled) }
+
+    fun setScope(scope: AudioScope) = update { it.copy(scope = scope) }
 
     fun setPreset(preset: EqPreset) = update {
         it.copy(preset = preset, bands = preset.gains, equalizerOn = true)

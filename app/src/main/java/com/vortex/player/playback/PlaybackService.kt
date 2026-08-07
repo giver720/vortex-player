@@ -20,6 +20,7 @@ import androidx.media3.session.MediaSessionService
 import com.vortex.player.MainActivity
 import com.vortex.player.audio.AudioEnhancer
 import com.vortex.player.audio.AudioPreferences
+import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaRepository
@@ -104,14 +105,20 @@ class PlaybackService : MediaSessionService() {
         refreshAudioSession(audioSessionId)
         scope.launch {
             AudioPreferences.observe(this@PlaybackService).collect { settings ->
+                val scopeChanged = settings.scope != audioSettings.scope
                 audioSettings = settings
-                enhancer.apply(settings)
+                // Cambiar de ámbito significa engancharse a otra sesión distinta, así que
+                // hay que rehacer la cadena entera, no sólo reajustar sus valores.
+                if (scopeChanged) refreshAudioSession(audioSessionId) else enhancer.apply(settings)
             }
         }
     }
 
     private fun refreshAudioSession(sessionId: Int) {
-        val capabilities = enhancer.attach(sessionId)
+        val capabilities = enhancer.attach(
+            playerSessionId = sessionId,
+            systemWide = audioSettings.scope == AudioScope.SYSTEM
+        )
         PlaybackHub.setAudioCapabilities(capabilities)
         enhancer.apply(audioSettings)
     }

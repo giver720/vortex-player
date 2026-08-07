@@ -15,68 +15,74 @@ data class AudioCapabilities(
     val hasBassBoost: Boolean = false,
     val hasVirtualizer: Boolean = false,
     val hasBoost: Boolean = false,
-    val hasCompressor: Boolean = false
+    val hasCompressor: Boolean = false,
+    /** Se pidió procesar todo el sistema y el dispositivo lo aceptó. */
+    val systemWide: Boolean = false
 )
 
 /**
- * Procesado de audio sobre la sesión del reproductor.
+ * Procesado de audio sobre una sesión.
  *
- * En Android 9 y posteriores se usa `DynamicsProcessing`, que permite montar la cadena
- * entera: ecualizador de diez bandas a las frecuencias que queramos, compresor multibanda
- * y **limitador**. El limitador es la pieza que justifica todo lo demás: sin él, subir el
- * volumen por encima del máximo del sistema recorta los picos y lo que se gana en
- * potencia se pierde en distorsión. Con él se puede empujar de verdad y que siga sonando
- * limpio.
+ * En Android 9 y posteriores todo se monta dentro de `DynamicsProcessing`: ecualizador de
+ * diez bandas, refuerzo de graves, compresor multibanda y limitador. **Una sola cadena.**
  *
- * En versiones anteriores se cae a los efectos clásicos, que dan menos control: el
- * ecualizador trae las bandas que traiga el móvil y la amplificación no lleva red.
- *
- * Nada de esto se aplica cuando reproduce libVLC: ese motor no expone una sesión de audio
- * a la que engancharse, y la interfaz lo advierte en vez de fingir que funciona.
+ * Esto último no es un detalle de estilo. Antes el refuerzo de graves usaba el efecto
+ * `BassBoost` por separado, encadenado sobre `DynamicsProcessing` en la misma sesión, y
+ * en algunos dispositivos eso rompía la ruta de audio: al activarlo dejaba de oírse todo.
+ * Metiendo los graves dentro del propio ecualizador, como un realce de las bandas bajas,
+ * hay un único efecto en la cadena y además el limitador ve ese realce y lo controla, en
+ * lugar de recibirlo ya amplificado desde fuera.
  */
 class AudioEnhancer {
 
     private var dynamics: DynamicsProcessing? = null
-    private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
+
+    // Camino de respaldo para Android 8 y anteriores, donde no hay DynamicsProcessing.
+    private var legacyBass: BassBoost? = null
     private var legacyLoudness: LoudnessEnhancer? = null
 
-    private var sessionId: Int = 0
+    private var sessionId: Int = -1
     private var channelCount: Int = 2
 
     var capabilities: AudioCapabilities = AudioCapabilities()
         private set
 
-    fun attach(newSessionId: Int): AudioCapabilities {
-        if (newSessionId == sessionId && (dynamics != null || legacyLoudness != null)) {
-            return capabilities
-        }
+    /**
+     * @param playerSessionId sesión del reproductor de Vórtex.
+     * @param systemWide engancharse a la mezcla global (sesión 0) para afectar a todas
+     *   las apps. Android lo permite pero lo desaconseja, y hay ROMs que lo ignoran.
+     */
+    fun attach(playerSessionId: Int, systemWide: Boolean): AudioCapabilities {
+        val target = if (systemWide) GLOBAL_SESSION else playerSessionId
+        if (target == sessionId && dynamics != null) return capabilities
         release()
-        sessionId = newSessionId
-        if (newSessionId == 0) return AudioCapabilities().also { capabilities = it }
-
-        // Estos dos son efectos independientes y conviven con la cadena principal, así
-        // que se crean igual en ambos caminos.
-        bassBoost = runCatching { BassBoost(0, newSessionId) }.getOrNull()
-        virtualizer = runCatching { Virtualizer(0, newSessionId) }.getOrNull()
+        sessionId = target
+        if (!systemWide && playerSessionId == 0) {
+            return AudioCapabilities().also { capabilities = it }
+        }
 
         val advanced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            createDynamics(newSessionId)
+            createDynamics(target)
         } else {
             false
         }
 
         if (!advanced) {
-            legacyLoudness = runCatching { LoudnessEnhancer(newSessionId) }.getOrNull()
+            legacyBass = runCatching { BassBoost(0, target) }.getOrNull()
+            legacyLoudness = runCatching { LoudnessEnhancer(target) }.getOrNull()
         }
 
         capabilities = AudioCapabilities(
             advanced = advanced,
             hasEqualizer = advanced,
-            hasBassBoost = bassBoost?.strengthSupported == true,
-            hasVirtualizer = virtualizer?.strengthSupported == true,
+            // En la cadena moderna los graves son parte del ecualizador, así que siempre
+            // están disponibles; en la antigua dependen de que exista el efecto.
+            hasBassBoost = advanced || legacyBass?.strengthSupported == true,
+            hasVirtualizer = true,
             hasBoost = advanced || legacyLoudness != null,
-            hasCompressor = advanced
+            hasCompressor = advanced,
+            systemWide = systemWide && (advanced || legacyLoudness != null)
         )
         return capabilities
     }
@@ -96,7 +102,7 @@ class AudioEnhancer {
         dynamics = DynamicsProcessing(0, session, config)
         true
     }.getOrElse {
-        Log.w(TAG, "DynamicsProcessing no disponible, se usan los efectos clásicos", it)
+        Log.w(TAG, "DynamicsProcessing no disponible en la sesión $session", it)
         dynamics = null
         false
     }
@@ -105,22 +111,33 @@ class AudioEnhancer {
         val on = settings.enabled
         applyDynamics(settings, on)
         applyLegacy(settings, on)
+        applyVirtualizer(settings, on)
+    }
 
+    /**
+     * El virtualizador es el único efecto que `DynamicsProcessing` no cubre, así que sigue
+     * siendo un efecto aparte. Se crea sólo cuando se va a usar y se destruye al apagarlo,
+     * en vez de dejarlo enganchado y desactivado: cuantos menos efectos haya en la cadena,
+     * menos ocasiones de que una ROM se atragante.
+     */
+    private fun applyVirtualizer(settings: AudioSettings, on: Boolean) {
+        val wanted = on && settings.virtualizerOn && settings.virtualizer > 0
+        if (!wanted) {
+            runCatching { virtualizer?.release() }
+            virtualizer = null
+            return
+        }
         runCatching {
-            bassBoost?.let {
-                val active = on && settings.bassBoostOn && settings.bassBoost > 0
-                it.enabled = active
-                if (active) it.setStrength(settings.bassBoost.toShort())
+            val effect = virtualizer ?: Virtualizer(0, sessionId).also { virtualizer = it }
+            if (effect.strengthSupported) {
+                effect.enabled = true
+                effect.setStrength(settings.virtualizer.toShort())
             }
-        }.onFailure { Log.w(TAG, "Refuerzo de graves no aplicado", it) }
-
-        runCatching {
-            virtualizer?.let {
-                val active = on && settings.virtualizerOn && settings.virtualizer > 0
-                it.enabled = active
-                if (active) it.setStrength(settings.virtualizer.toShort())
-            }
-        }.onFailure { Log.w(TAG, "Virtualizador no aplicado", it) }
+        }.onFailure {
+            Log.w(TAG, "Virtualizador no aplicado", it)
+            runCatching { virtualizer?.release() }
+            virtualizer = null
+        }
     }
 
     private fun applyDynamics(settings: AudioSettings, on: Boolean) {
@@ -131,23 +148,27 @@ class AudioEnhancer {
             dp.enabled = on
             if (!on) return
 
-            // --- Ecualizador -------------------------------------------------
+            // --- Ecualizador, con los graves sumados dentro --------------------
             val eqOn = settings.equalizerOn
-            val gains = settings.effectiveBands
+            val base = settings.effectiveBands
+            val bass = bassShelf(settings)
             for (channel in 0 until channelCount) {
                 val preEq = dp.getPreEqByChannelIndex(channel)
-                preEq.isEnabled = eqOn
+                // El pre-ecualizador se deja activo aunque el usuario apague el
+                // ecualizador, porque es también quien aplica el refuerzo de graves.
+                preEq.isEnabled = true
                 EQ_BANDS.forEachIndexed { index, frequency ->
                     val band = preEq.getBand(index)
-                    band.isEnabled = eqOn
+                    band.isEnabled = true
                     band.cutoffFrequency = frequency.toFloat()
-                    band.gain = gains.getOrElse(index) { 0f }.coerceIn(EQ_MIN_DB, EQ_MAX_DB)
+                    val eqGain = if (eqOn) base.getOrElse(index) { 0f } else 0f
+                    band.gain = (eqGain + bass[index]).coerceIn(MIN_BAND_DB, MAX_BAND_DB)
                     preEq.setBand(index, band)
                 }
                 dp.setPreEqByChannelIndex(channel, preEq)
             }
 
-            // --- Nivelador (compresor multibanda) -----------------------------
+            // --- Nivelador -----------------------------------------------------
             val compressorOn = settings.compressorOn && settings.compressor > 0f
             val amount = settings.compressor.coerceIn(0f, 1f)
             for (channel in 0 until channelCount) {
@@ -157,9 +178,6 @@ class AudioEnhancer {
                     val band = mbc.getBand(index)
                     band.isEnabled = compressorOn
                     band.cutoffFrequency = frequency.toFloat()
-                    // Cuanto más nivelador, antes entra y más aprieta. La ganancia de
-                    // salida compensa lo que el compresor baja, que es de donde sale la
-                    // sensación de "suena más lleno" sin tocar el volumen.
                     band.threshold = -20f - 20f * amount
                     band.ratio = 1.5f + 4.5f * amount
                     band.attackTime = 8f
@@ -174,9 +192,8 @@ class AudioEnhancer {
                 dp.setMbcByChannelIndex(channel, mbc)
             }
 
-            // --- Amplificación y limitador ------------------------------------
-            val boostOn = settings.boostOn && settings.boostDb > 0f
-            val boost = if (boostOn) {
+            // --- Amplificación y limitador -------------------------------------
+            val boost = if (settings.boostOn) {
                 settings.boostDb.coerceIn(0f, AudioSettings.MAX_BOOST_DB)
             } else {
                 0f
@@ -185,9 +202,6 @@ class AudioEnhancer {
 
             for (channel in 0 until channelCount) {
                 val limiter = dp.getLimiterByChannelIndex(channel)
-                // El limitador se deja siempre puesto mientras el procesado esté activo:
-                // también protege de los picos que crean el ecualizador y el compresor,
-                // no sólo de la amplificación.
                 limiter.isEnabled = true
                 limiter.threshold = -1f
                 limiter.ratio = 20f
@@ -199,36 +213,68 @@ class AudioEnhancer {
         }.onFailure { Log.w(TAG, "Cadena de audio no aplicada", it) }
     }
 
+    /**
+     * Realce de graves repartido por bandas. Es una curva de estantería: mucho en 31 Hz y
+     * desvaneciéndose hacia los medios, que es como suena natural. Sumarlo al ecualizador
+     * en vez de usar un efecto aparte deja el limitador al final de todo, controlándolo.
+     */
+    private fun bassShelf(settings: AudioSettings): List<Float> {
+        if (!settings.bassBoostOn || settings.bassBoost <= 0) return List(EQ_BANDS.size) { 0f }
+        val amount = settings.bassBoost.toFloat() / AudioSettings.MAX_STRENGTH
+        return BASS_CURVE.map { it * MAX_BASS_DB * amount }
+    }
+
     private fun applyLegacy(settings: AudioSettings, on: Boolean) {
-        val loudness = legacyLoudness ?: return
         runCatching {
-            val active = on && settings.boostOn && settings.boostDb > 0f
-            loudness.enabled = active
-            // Sin limitador disponible se recorta la amplificación a la mitad: pasado de
-            // ahí, en este camino, la distorsión es segura.
-            if (active) {
-                val capped = settings.boostDb.coerceAtMost(AudioSettings.MAX_BOOST_DB / 2f)
-                loudness.setTargetGain((capped * 100).toInt())
+            legacyBass?.let {
+                val active = on && settings.bassBoostOn && settings.bassBoost > 0
+                it.enabled = active
+                if (active) it.setStrength(settings.bassBoost.toShort())
+            }
+        }.onFailure { Log.w(TAG, "Graves clásicos no aplicados", it) }
+
+        runCatching {
+            legacyLoudness?.let {
+                val active = on && settings.boostOn && settings.boostDb > 0f
+                it.enabled = active
+                // Sin limitador se recorta a la mitad: pasado de ahí la distorsión es segura.
+                if (active) {
+                    val capped = settings.boostDb.coerceAtMost(AudioSettings.MAX_BOOST_DB / 2f)
+                    it.setTargetGain((capped * 100).toInt())
+                }
             }
         }.onFailure { Log.w(TAG, "Amplificación clásica no aplicada", it) }
     }
 
     fun release() {
         runCatching { dynamics?.release() }
-        runCatching { bassBoost?.release() }
         runCatching { virtualizer?.release() }
+        runCatching { legacyBass?.release() }
         runCatching { legacyLoudness?.release() }
         dynamics = null
-        bassBoost = null
         virtualizer = null
+        legacyBass = null
         legacyLoudness = null
-        sessionId = 0
+        sessionId = -1
     }
 
     private companion object {
         const val TAG = "AudioEnhancer"
 
+        /** Sesión 0: la mezcla de salida del sistema, común a todas las apps. */
+        const val GLOBAL_SESSION = 0
+
         /** Bandas del compresor. Menos que en el ecualizador: comprimir fino suena raro. */
         val MBC_BANDS = listOf(120, 500, 2_000, 8_000)
+
+        /** Peso del realce de graves por banda, de 31 Hz a 16 kHz. */
+        val BASS_CURVE = listOf(1f, 0.85f, 0.6f, 0.3f, 0.1f, 0f, 0f, 0f, 0f, 0f)
+
+        const val MAX_BASS_DB = 10f
+
+        // Margen interno: la suma del ecualizador y los graves puede pasarse del rango
+        // que ve el usuario, y recortarla ahí dejaría la curva plana justo donde importa.
+        const val MIN_BAND_DB = -18f
+        const val MAX_BAND_DB = 18f
     }
 }

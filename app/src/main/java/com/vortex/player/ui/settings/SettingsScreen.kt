@@ -38,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vortex.player.audio.AudioCapabilities
+import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EqPreset
 import com.vortex.player.ui.theme.VortexPalette
@@ -108,6 +110,8 @@ fun SettingsScreen(
                 }
                 return@LazyColumn
             }
+
+            item { ScopeSelector(settings, caps, viewModel::setScope) }
 
             if (caps.advanced) {
                 item { LimiterBadge(settings) }
@@ -300,6 +304,58 @@ private fun MasterSwitch(settings: AudioSettings, onToggle: (Boolean) -> Unit) {
     }
 }
 
+/**
+ * Elegir si el procesado afecta sólo a Vórtex o a todo el audio del dispositivo.
+ *
+ * Lo global se consigue enganchándose a la mezcla de salida del sistema. Android lo
+ * permite pero lo tiene marcado como desaconsejado, y hay fabricantes que lo ignoran sin
+ * dar error, así que aquí se dice si el dispositivo lo aceptó en vez de darlo por hecho.
+ */
+@Composable
+private fun ScopeSelector(
+    settings: AudioSettings,
+    caps: AudioCapabilities,
+    onScope: (AudioScope) -> Unit
+) {
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+        Text(
+            text = "APLICAR A",
+            style = MaterialTheme.typography.labelMedium,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AudioScope.entries.forEach { scope ->
+                PresetChip(
+                    label = scope.label,
+                    selected = settings.scope == scope,
+                    enabled = settings.enabled
+                ) { onScope(scope) }
+            }
+        }
+        Text(
+            text = when {
+                settings.scope == AudioScope.VORTEX ->
+                    "El procesado sólo afecta a lo que reproduce Vórtex."
+                caps.systemWide ->
+                    "Tu dispositivo aceptó procesar la salida del sistema: afecta también " +
+                        "a YouTube, Spotify y demás apps."
+                else ->
+                    "Tu dispositivo no ha aceptado procesar la salida del sistema. Android " +
+                        "lo desaconseja y algunos fabricantes lo bloquean; sólo se aplicará " +
+                        "a Vórtex."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = when {
+                settings.scope == AudioScope.VORTEX -> VortexPalette.TextLow
+                caps.systemWide -> VortexPalette.Cyan
+                else -> VortexPalette.Amber
+            },
+            modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+}
+
 /** El limitador no se puede apagar, así que se informa de él en vez de ofrecerlo. */
 @Composable
 private fun LimiterBadge(settings: AudioSettings) {
@@ -392,7 +448,10 @@ private fun EffectSlider(
             value = value.coerceIn(0f, max),
             onValueChange = onChange,
             valueRange = 0f..max,
-            enabled = enabled && on,
+            // Basta con el interruptor maestro. Condicionarlo además al del efecto dejaba
+            // el deslizador muerto: para moverlo había que encender antes un efecto que,
+            // con el valor a cero, no hacía nada. Mover el deslizador ya lo enciende.
+            enabled = enabled,
             colors = SliderDefaults.colors(
                 thumbColor = VortexPalette.Neon,
                 activeTrackColor = VortexPalette.Neon,

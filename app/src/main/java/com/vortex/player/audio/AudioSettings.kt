@@ -35,8 +35,22 @@ enum class EqPreset(val label: String, val gains: List<Float>) {
     NIGHT("NOCHE", listOf(2f, 1.5f, 1f, 1.5f, 2.5f, 2.5f, 2f, 1f, 0.5f, 0f))
 }
 
+/** A qué audio se aplica el procesado. */
+enum class AudioScope(val label: String) {
+    /** Sólo lo que reproduce Vórtex. Siempre funciona. */
+    VORTEX("SÓLO VÓRTEX"),
+
+    /**
+     * La mezcla de salida del sistema, con lo que afecta también a YouTube, Spotify y
+     * cualquier otra app. Android lo permite enganchándose a la sesión 0, pero lo tiene
+     * marcado como desaconsejado: hay dispositivos y versiones que lo ignoran sin avisar.
+     */
+    SYSTEM("TODO EL SISTEMA")
+}
+
 data class AudioSettings(
     val enabled: Boolean = false,
+    val scope: AudioScope = AudioScope.VORTEX,
 
     /** Ganancia de cada banda en dB. Su tamaño coincide con [EQ_BANDS]. */
     val bands: List<Float> = List(EQ_BANDS.size) { 0f },
@@ -75,6 +89,7 @@ object AudioPreferences {
     private const val MANUAL = "MANUAL"
 
     private val ENABLED = booleanPreferencesKey("audio_enabled_v2")
+    private val SCOPE = stringPreferencesKey("audio_scope")
     private val BANDS = stringPreferencesKey("eq_bands_v2")
     private val PRESET = stringPreferencesKey("eq_preset_v2")
     private val EQ_ON = booleanPreferencesKey("eq_on")
@@ -91,6 +106,9 @@ object AudioPreferences {
         context.audioDataStore.data.map { prefs ->
             AudioSettings(
                 enabled = prefs[ENABLED] ?: false,
+                scope = prefs[SCOPE]
+                    ?.let { runCatching { AudioScope.valueOf(it) }.getOrNull() }
+                    ?: AudioScope.VORTEX,
                 bands = prefs[BANDS]
                     ?.split(',')
                     ?.mapNotNull { it.trim().toFloatOrNull() }
@@ -119,6 +137,7 @@ object AudioPreferences {
     suspend fun save(context: Context, settings: AudioSettings) {
         context.audioDataStore.edit { prefs ->
             prefs[ENABLED] = settings.enabled
+            prefs[SCOPE] = settings.scope.name
             prefs[BANDS] = settings.bands.joinToString(",")
             prefs[PRESET] = settings.preset?.name ?: MANUAL
             prefs[EQ_ON] = settings.equalizerOn
