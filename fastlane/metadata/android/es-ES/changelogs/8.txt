@@ -1,0 +1,11 @@
+Nueva sección de sonido, con procesado de audio para auriculares.
+
+• Ecualizador de 10 bandas (31 Hz a 16 kHz) con curva visual que se arrastra con el dedo, y presets: plano, graves, voz, agudos, sonrisa, podcast y noche.
+• Volumen extra por encima del máximo del sistema, hasta +15 dB.
+• Limitador siempre activo. Es la diferencia con otras apps de este tipo: sin él, subir el volumen recorta los picos y lo que ganas en potencia lo pierdes en distorsión. Con él puedes empujar de verdad y que siga sonando limpio.
+• Nivelador: comprime el rango dinámico para que lo flojo se oiga sin que lo fuerte moleste. Es lo que hace que una grabación pobre suene llena, y lo que más se agradece en la calle.
+• Refuerzo de graves y espacialidad estéreo, cada uno con su interruptor.
+
+En Android 9 y posteriores se usa el procesador de dinámica del sistema, que permite montar la cadena entera. En versiones anteriores se cae a los efectos clásicos, con menos bandas y con la amplificación limitada a la mitad, porque sin limitador pasarse distorsiona.
+
+El procesado no se aplica cuando reproduce el motor VLC, que no expone una sesión de audio a la que engancharse. La pantalla lo advierte en lugar de fingir que funciona.

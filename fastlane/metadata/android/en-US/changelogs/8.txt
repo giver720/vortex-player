@@ -1,0 +1,11 @@
+A new sound section, with audio processing aimed at headphones.
+
+• 10-band equalizer (31 Hz to 16 kHz) with a curve you drag with your finger, plus presets: flat, bass, vocal, treble, smile, podcast and night.
+• Extra volume above the system maximum, up to +15 dB.
+• A limiter that is always on. This is the difference from other apps of this kind: without it, raising the volume clips the peaks and what you gain in power you lose in distortion. With it you can really push and still sound clean.
+• Leveller: compresses dynamic range so quiet parts are audible without loud parts becoming harsh. It's what makes a poor recording sound full, and what you appreciate most out on the street.
+• Bass boost and stereo width, each with its own switch.
+
+On Android 9 and later the system's dynamics processor is used, which allows building the whole chain. On earlier versions it falls back to the classic effects, with fewer bands and loudness capped at half, because without a limiter pushing further distorts.
+
+Processing does not apply while the VLC engine is playing, as it exposes no audio session to attach to. The screen says so rather than pretending it works.

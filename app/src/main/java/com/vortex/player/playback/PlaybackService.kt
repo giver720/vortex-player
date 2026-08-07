@@ -3,6 +3,7 @@ package com.vortex.player.playback
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -17,6 +18,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.vortex.player.MainActivity
+import com.vortex.player.audio.AudioEnhancer
+import com.vortex.player.audio.AudioPreferences
+import com.vortex.player.audio.AudioSettings
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaRepository
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +50,22 @@ class PlaybackService : MediaSessionService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repository: MediaRepository
 
+    private val enhancer = AudioEnhancer()
+    private var audioSettings = AudioSettings()
+
+    /**
+     * Sesión de audio propia, generada por nosotros e impuesta a ExoPlayer.
+     *
+     * Se hace así en vez de esperar a que el reproductor anuncie la suya porque ese aviso
+     * no llega de forma fiable, y sin identificador de sesión no hay dónde enganchar los
+     * efectos: el ecualizador se quedaba sin aplicar y la pantalla de ajustes no mostraba
+     * ninguna capacidad aunque hubiera música sonando.
+     */
+    private val audioSessionId: Int by lazy {
+        val manager = getSystemService(AUDIO_SERVICE) as AudioManager
+        manager.generateAudioSessionId()
+    }
+
     private var usingVlc = false
     private var audioOnly = false
     private var sleepRunnable: Runnable? = null
@@ -70,6 +90,30 @@ class PlaybackService : MediaSessionService() {
         PlaybackHub.setPlayer(exoPlayer, exoControls)
         instance = this
         startPositionPersistence()
+        startAudioEnhancer()
+    }
+
+    /**
+     * Mantiene los efectos de audio enganchados a la sesión de ExoPlayer.
+     *
+     * La sesión cambia cuando el reproductor recrea su salida, así que hay que reengancharse
+     * cada vez; si no, los ajustes dejan de tener efecto en la segunda canción sin que nada
+     * lo indique.
+     */
+    private fun startAudioEnhancer() {
+        refreshAudioSession(audioSessionId)
+        scope.launch {
+            AudioPreferences.observe(this@PlaybackService).collect { settings ->
+                audioSettings = settings
+                enhancer.apply(settings)
+            }
+        }
+    }
+
+    private fun refreshAudioSession(sessionId: Int) {
+        val capabilities = enhancer.attach(sessionId)
+        PlaybackHub.setAudioCapabilities(capabilities)
+        enhancer.apply(audioSettings)
     }
 
     private fun buildExoPlayer(): ExoPlayer =
@@ -87,6 +131,7 @@ class PlaybackService : MediaSessionService() {
             .apply {
                 // Sin esto, el modo solo-audio se corta al apagar la pantalla.
                 setWakeMode(C.WAKE_MODE_NETWORK)
+                audioSessionId = this@PlaybackService.audioSessionId
                 addListener(playerListener)
             }
 
@@ -145,6 +190,10 @@ class PlaybackService : MediaSessionService() {
             fallbackAttemptedFor = null
             if (usingVlc) switchBackToExo()
         }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            refreshAudioSession(audioSessionId)
+        }
     }
 
     private fun switchToVlc() {
@@ -165,6 +214,9 @@ class PlaybackService : MediaSessionService() {
         usingVlc = true
         mediaSession?.player = vlc
         PlaybackHub.setPlayer(vlc, vlc)
+        // libVLC no expone sesión de audio: los efectos del sistema no le llegan.
+        enhancer.release()
+        PlaybackHub.setAudioCapabilities(null)
     }
 
     private fun switchBackToExo() {
@@ -175,6 +227,7 @@ class PlaybackService : MediaSessionService() {
         usingVlc = false
         mediaSession?.player = exoPlayer
         PlaybackHub.setPlayer(exoPlayer, exoControls)
+        refreshAudioSession(audioSessionId)
     }
 
     private val vlcListener = object : Player.Listener {
@@ -269,6 +322,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         persistNow()
         sleepRunnable?.let { handler.removeCallbacks(it) }
+        enhancer.release()
+        PlaybackHub.setAudioCapabilities(null)
         scope.cancel()
         mediaSession?.run {
             player.release()

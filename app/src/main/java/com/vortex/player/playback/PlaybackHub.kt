@@ -1,6 +1,7 @@
 package com.vortex.player.playback
 
 import androidx.media3.common.Player
+import com.vortex.player.audio.AudioCapabilities
 import com.vortex.player.data.MediaEntry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,18 @@ object PlaybackHub {
     /** Instante (epoch ms) en el que el temporizador de apagado detendrá la reproducción. */
     private val _sleepAtMs = MutableStateFlow<Long?>(null)
     val sleepAtMs: StateFlow<Long?> = _sleepAtMs.asStateFlow()
+
+    /**
+     * Lo que el DSP del dispositivo permite en la sesión actual. Es `null` mientras no
+     * haya reproducción, y queda vacío cuando el motor activo es VLC, que no expone
+     * sesión de audio a la que enganchar efectos.
+     */
+    private val _audioCapabilities = MutableStateFlow<AudioCapabilities?>(null)
+    val audioCapabilities: StateFlow<AudioCapabilities?> = _audioCapabilities.asStateFlow()
+
+    internal fun setAudioCapabilities(capabilities: AudioCapabilities?) {
+        _audioCapabilities.value = capabilities
+    }
 
     /** La ventana flotante está en pantalla. */
     private val _popupVisible = MutableStateFlow(false)

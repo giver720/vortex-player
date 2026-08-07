@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -81,6 +82,7 @@ fun LibraryScreen(
     onOpenDownloads: () -> Unit,
     appVersion: String = "",
     onCheckUpdates: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     /** Aviso de actualización, si lo hay. Se pinta bajo la cabecera. */
     updateBanner: @Composable () -> Unit = {}
 ) {
@@ -163,7 +165,8 @@ fun LibraryScreen(
                     appVersion = appVersion,
                     onCheckUpdates = onCheckUpdates,
                     autoRefresh = prefs.autoRefresh,
-                    onToggleAutoRefresh = viewModel::toggleAutoRefresh
+                    onToggleAutoRefresh = viewModel::toggleAutoRefresh,
+                    onOpenSettings = onOpenSettings
                 )
                 updateBanner()
             }
@@ -423,7 +426,8 @@ private fun VortexHeader(
     appVersion: String,
     onCheckUpdates: () -> Unit,
     autoRefresh: Boolean,
-    onToggleAutoRefresh: () -> Unit
+    onToggleAutoRefresh: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -464,6 +468,33 @@ private fun VortexHeader(
                 onDismissRequest = { menuOpen = false },
                 containerColor = VortexPalette.GraphiteRaised
             ) {
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.Tune,
+                            contentDescription = null,
+                            tint = VortexPalette.Neon
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Ajustes de audio",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = VortexPalette.TextHigh
+                            )
+                            Text(
+                                "Ecualizador, graves y amplificación",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = VortexPalette.TextLow
+                            )
+                        }
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onOpenSettings()
+                    }
+                )
                 DropdownMenuItem(
                     leadingIcon = {
                         Icon(

@@ -26,6 +26,8 @@ import com.vortex.player.ui.downloads.DownloadsViewModel
 import com.vortex.player.ui.library.LibraryScreen
 import com.vortex.player.ui.library.LibraryViewModel
 import com.vortex.player.ui.player.PlayerActivity
+import com.vortex.player.ui.settings.SettingsScreen
+import com.vortex.player.ui.settings.SettingsViewModel
 import com.vortex.player.ui.theme.VortexTheme
 import com.vortex.player.ui.update.UpdateBanner
 import com.vortex.player.ui.update.UpdateDialog
@@ -34,13 +36,14 @@ import com.vortex.player.ui.update.UpdateViewModel
 import com.vortex.player.update.UpdateInstaller
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-private enum class Screen { LIBRARY, DOWNLOADS }
+private enum class Screen { LIBRARY, DOWNLOADS, SETTINGS }
 
 class MainActivity : ComponentActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
     private val downloadsViewModel: DownloadsViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
 
     /**
      * El permiso de superposición no se concede desde un diálogo normal: hay que mandar
@@ -88,6 +91,7 @@ class MainActivity : ComponentActivity() {
                             onOpenDownloads = { screen = Screen.DOWNLOADS },
                             appVersion = updateViewModel.currentVersion,
                             onCheckUpdates = { updateViewModel.check() },
+                            onOpenSettings = { screen = Screen.SETTINGS },
                             updateBanner = {
                                 val available = updateStage as? UpdateStage.Available
                                 if (bannerVisible && available != null) {
@@ -106,6 +110,14 @@ class MainActivity : ComponentActivity() {
                                 viewModel = downloadsViewModel,
                                 onBack = { screen = Screen.LIBRARY },
                                 onPickFolder = { folderLauncher.launch(null) }
+                            )
+                        }
+
+                        Screen.SETTINGS -> {
+                            BackHandler { screen = Screen.LIBRARY }
+                            SettingsScreen(
+                                viewModel = settingsViewModel,
+                                onBack = { screen = Screen.LIBRARY }
                             )
                         }
                     }
