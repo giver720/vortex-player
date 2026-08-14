@@ -1,0 +1,5 @@
+Los vídeos vuelven a guardarse siempre en MP4.
+
+• Algunas descargas acababan en WEBM. Eran dos casos distintos: cuando se unían pista de vídeo y de audio por separado, el audio elegido era el opus que YouTube sirve dentro de webm; y cuando la fuente entrega un único fichero ya mezclado —lo normal fuera de YouTube— no había nada que unir, así que el envase no se tocaba y el webm llegaba tal cual al destino.
+• Ahora se pide el audio en AAC, que es la pareja que cualquier reproductor entiende dentro de un MP4, y lo que llegue en otro envase se reenvasa a MP4 al terminar. En ninguno de los dos pasos se recodifica: la calidad es exactamente la misma y el tiempo añadido es de segundos.
+• La calidad de vídeo no se toca. Filtrar también el vídeo por MP4 habría sido más simple, pero por encima de 1080p YouTube sólo publica VP9 y AV1: pedir 4K habría devuelto un 1080p sin avisar. VP9 y AV1 caben en MP4 tal cual, así que se conservan.

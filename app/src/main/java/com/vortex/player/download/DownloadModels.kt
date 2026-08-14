@@ -20,9 +20,21 @@ enum class VideoQuality(val label: String, private val maxHeight: Int?) {
     SD("480p", 480),
     LOW("360p", 360);
 
+    /**
+     * El audio se pide en m4a (AAC) antes que "el mejor", que en YouTube es opus dentro de
+     * webm. No es que el opus no quepa en mp4 —ffmpeg lo admite—, sino que AAC en mp4 es la
+     * pareja que reproduce cualquier cosa, incluidas las apps a las que el usuario lleve
+     * después el fichero. Cambia el envase, no la calidad: no se recodifica nada.
+     *
+     * Al vídeo, en cambio, no se le exige mp4 a propósito. Por encima de 1080p YouTube
+     * sólo publica VP9 y AV1, de modo que filtrar por extensión haría que "el mejor mp4
+     * de hasta 2160p" fuera en realidad el H.264 de 1080p, y pedir 4K devolvería 1080p sin
+     * decir nada. VP9 y AV1 caben en mp4 tal cual.
+     */
     fun formatSelector(): String {
         val cap = maxHeight?.let { "[height<=$it]" } ?: ""
-        return "bestvideo$cap+bestaudio/best$cap/best"
+        return "bestvideo$cap+bestaudio[ext=m4a]/bestvideo$cap+bestaudio/" +
+            "best$cap[ext=mp4]/best$cap/best"
     }
 }
 

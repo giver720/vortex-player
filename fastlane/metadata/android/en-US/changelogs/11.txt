@@ -1,0 +1,5 @@
+Videos are saved as MP4 again, every time.
+
+• Some downloads ended up as WEBM. Two separate causes: when a video and an audio track were merged, the chosen audio was the opus that YouTube serves inside webm; and when the source hands over a single pre-muxed file — normal outside YouTube — there was nothing to merge, so the container was never touched and the webm reached the destination as-is.
+• Audio is now requested as AAC, the pairing any player understands inside an MP4, and anything arriving in another container is remuxed to MP4 at the end. Neither step re-encodes: quality is identical and the added time is seconds.
+• Video quality is untouched. Filtering video by MP4 too would have been simpler, but above 1080p YouTube only publishes VP9 and AV1: asking for 4K would have silently returned 1080p. VP9 and AV1 fit in MP4 as they are, so they are kept.

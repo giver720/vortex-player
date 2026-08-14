@@ -166,6 +166,12 @@ object YtDlpEngine {
                     // Remuxar (no recodificar) a MP4 mantiene la calidad intacta y es
                     // casi instantáneo; recodificar tardaría más que la propia descarga.
                     addOption("--merge-output-format", "mp4")
+                    // `--merge-output-format` sólo interviene cuando hay dos pistas que
+                    // unir. Si la fuente entrega un único fichero ya mezclado —lo normal
+                    // fuera de YouTube, y el último recurso del selector— no se mezcla
+                    // nada y el webm llegaba intacto al destino. Esto lo reenvasa, también
+                    // sin recodificar, y no toca lo que ya venga en mp4.
+                    addOption("--remux-video", "mp4")
                 }
             }
 
