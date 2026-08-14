@@ -256,7 +256,8 @@ fun DownloadsScreen(
                     if (playlist) {
                         Text(
                             text = "Cada lista se guardará en su propia carpeta, con las " +
-                                "pistas numeradas.",
+                                "pistas numeradas. Un enlace suelto se descarga como un " +
+                                "archivo más, sin carpeta.",
                             style = MaterialTheme.typography.bodySmall,
                             color = VortexPalette.TextLow,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)

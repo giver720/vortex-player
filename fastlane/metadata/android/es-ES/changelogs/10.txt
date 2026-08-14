@@ -1,0 +1,7 @@
+Vuelven el bucle y el aleatorio, y las descargas sueltas dejan de inventarse listas.
+
+• Botones de aleatorio y repetición junto a anterior/siguiente en el reproductor. La repetición cicla entre ninguna, toda la cola y sólo esta pista. Ambos se recuerdan entre sesiones y sobreviven al cambio de motor: si un fichero raro obliga a saltar de Media3 a VLC, el orden que habías elegido se mantiene.
+• El motor VLC ya entiende los dos modos. Antes sólo sabía repetir la pista actual: el bucle de la cola entera se paraba al llegar al final y el aleatorio no existía. Al dar la vuelta con aleatorio activo se baraja de nuevo, para que la segunda pasada no repita el mismo orden.
+
+Corregido:
+• Descargar un vídeo suelto con "lista completa" activa creaba una carpeta llamada "Sin lista" con el archivo numerado dentro, y esa lista fantasma acababa en la biblioteca. yt-dlp no sabe si un enlace es una lista hasta que descarga, así que ahora Vórtex deshace esa carpeta antes de guardar nada: lo individual llega al destino como un archivo suelto, sin carpeta y sin numerar. Las listas de verdad siguen igual.

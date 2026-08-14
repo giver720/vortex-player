@@ -1,0 +1,7 @@
+Loop and shuffle are back, and single downloads no longer invent playlists.
+
+• Shuffle and repeat buttons sit next to previous/next in the player. Repeat cycles through off, whole queue and this track only. Both are remembered between sessions and survive an engine switch: if an awkward file forces a jump from Media3 to VLC, the order you chose stays.
+• The VLC engine now understands both modes. It used to only repeat the current track: looping the whole queue stopped at the end, and shuffle did not exist at all. Wrapping around with shuffle on reshuffles, so the second pass is not the same order again.
+
+Fixed:
+• Downloading a single video with "full playlist" enabled created a folder named "Sin lista" with the file numbered inside, and that phantom playlist ended up in the library. yt-dlp cannot tell whether a link is a playlist until it downloads, so Vórtex now undoes that folder before saving anything: a single item reaches the destination as a plain file, no folder and no numbering. Real playlists are unchanged.

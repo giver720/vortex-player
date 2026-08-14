@@ -34,10 +34,13 @@ object DownloadPublisher {
         treeUri: Uri?,
         kind: DownloadKind
     ): PublishResult = withContext(Dispatchers.IO) {
+        undoPlaceholderFolder(workspace)
+
         val files = workspace.walkTopDown().filter { it.isFile }.toList()
         if (files.isEmpty()) return@withContext PublishResult("—", 0, null)
 
-        // Si yt-dlp creó una subcarpeta, era una lista: ese nombre se conserva al destino.
+        // Si a estas alturas queda una subcarpeta, era una lista de verdad: ese nombre se
+        // conserva al destino.
         val playlistFolder = files
             .mapNotNull { it.parentFile }
             .firstOrNull { it != workspace }
@@ -52,6 +55,34 @@ object DownloadPublisher {
         workspace.deleteRecursively()
         PublishResult(location, files.size, playlistFolder)
     }
+
+    /**
+     * Deshace la carpeta señuelo que yt-dlp crea cuando el enlace no era una lista.
+     *
+     * Los ficheros suben a la raíz de la zona de trabajo y pierden el índice de relleno
+     * ("000 - "), de modo que a partir de aquí todo el camino de publicación ve
+     * exactamente lo mismo que en una descarga individual: ni carpeta, ni numeración, ni
+     * lista inventada en la biblioteca.
+     */
+    private fun undoPlaceholderFolder(workspace: File) {
+        val placeholder = File(workspace, YtDlpEngine.NO_PLAYLIST_FOLDER)
+        if (!placeholder.isDirectory) return
+
+        placeholder.walkTopDown().filter { it.isFile }.forEach { file ->
+            val target = File(workspace, file.name.replace(PLACEHOLDER_INDEX, ""))
+            if (!file.renameTo(target)) {
+                file.copyTo(target, overwrite = true)
+                file.delete()
+            }
+        }
+        placeholder.deleteRecursively()
+    }
+
+    /**
+     * El prefijo numérico que la plantilla de lista antepone. Sólo se aplica dentro de la
+     * carpeta señuelo, así que no hay riesgo de mutilar un título que empiece por cifras.
+     */
+    private val PLACEHOLDER_INDEX = Regex("^\\d{3} - ")
 
     private fun copyToTree(
         context: Context,

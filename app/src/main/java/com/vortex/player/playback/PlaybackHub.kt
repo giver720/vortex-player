@@ -28,6 +28,25 @@ object PlaybackHub {
     private val _currentEntry = MutableStateFlow<MediaEntry?>(null)
     val currentEntry: StateFlow<MediaEntry?> = _currentEntry.asStateFlow()
 
+    /**
+     * Repetición y aleatorio. Se guardan aquí, y no se leen del `Player`, porque son
+     * preferencias del usuario que sobreviven al cambio de motor y a que no haya nada
+     * sonando: el motor es sólo quien las obedece.
+     */
+    private val _repeat = MutableStateFlow(RepeatMode.OFF)
+    val repeat: StateFlow<RepeatMode> = _repeat.asStateFlow()
+
+    private val _shuffle = MutableStateFlow(false)
+    val shuffle: StateFlow<Boolean> = _shuffle.asStateFlow()
+
+    internal fun setRepeat(mode: RepeatMode) {
+        _repeat.value = mode
+    }
+
+    internal fun setShuffle(enabled: Boolean) {
+        _shuffle.value = enabled
+    }
+
     /** Solo-audio: el vídeo se apaga pero el sonido continúa sin cortes. */
     private val _audioOnly = MutableStateFlow(false)
     val audioOnly: StateFlow<Boolean> = _audioOnly.asStateFlow()

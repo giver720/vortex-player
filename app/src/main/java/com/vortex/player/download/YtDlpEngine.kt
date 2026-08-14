@@ -22,6 +22,17 @@ object YtDlpEngine {
 
     private const val TAG = "YtDlpEngine"
 
+    /**
+     * Carpeta señuelo para los enlaces que resultan no ser una lista.
+     *
+     * yt-dlp decide si hay lista mientras descarga, no antes, así que con "lista completa"
+     * activa un vídeo suelto pasa igualmente por la plantilla de lista y necesita algún
+     * valor para `playlist_title`. En vez de un nombre visible —que acababa creando una
+     * carpeta "Sin lista" en el destino— se usa esta marca, que [DownloadPublisher]
+     * reconoce y deshace antes de publicar nada.
+     */
+    const val NO_PLAYLIST_FOLDER = "__vortex_sin_lista__"
+
     private val initLock = Mutex()
 
     @Volatile
@@ -202,6 +213,9 @@ object YtDlpEngine {
      * Plantilla de nombres. Cuando el enlace es una lista, el propio yt-dlp crea la
      * subcarpeta con el nombre de la playlist y numera las pistas, que es exactamente
      * el comportamiento pedido y evita tener que reorganizar ficheros después.
+     *
+     * Si no había lista, la subcarpeta y el índice caen en [NO_PLAYLIST_FOLDER] y en un
+     * índice cero, y [DownloadPublisher] los retira: al destino llega un fichero suelto.
      */
     private fun outputTemplate(
         request: DownloadRequest,
@@ -214,7 +228,7 @@ object YtDlpEngine {
         } else if (request.playlist) {
             File(
                 destination,
-                "%(playlist_title|Sin lista)s/%(playlist_index|0)03d - %(title)s.%(ext)s"
+                "%(playlist_title|$NO_PLAYLIST_FOLDER)s/%(playlist_index|0)03d - %(title)s.%(ext)s"
             ).absolutePath
         } else {
             File(destination, "%(title)s.%(ext)s").absolutePath

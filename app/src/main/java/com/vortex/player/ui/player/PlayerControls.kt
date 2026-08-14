@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
@@ -54,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.playback.RepeatMode
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.common.formatRemaining
 import com.vortex.player.ui.theme.VortexPalette
@@ -74,12 +78,16 @@ fun ControlsOverlay(
     audioOnly: Boolean,
     speed: Float,
     preset: AspectPreset,
+    repeat: RepeatMode,
+    shuffle: Boolean,
     onBack: () -> Unit,
     onToggleLock: () -> Unit,
     onPlayPause: () -> Unit,
     onSeekTo: (Float) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onCycleRepeat: () -> Unit,
+    onToggleShuffle: () -> Unit,
     onToggleAudioOnly: () -> Unit,
     onOpenAspect: () -> Unit,
     onOpenPanel: (Panel) -> Unit,
@@ -180,8 +188,9 @@ fun ControlsOverlay(
         Row(
             modifier = Modifier.align(Alignment.Center),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(26.dp)
+            horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            ShuffleButton(enabled = shuffle, onClick = onToggleShuffle)
             IconButton(onClick = onPrevious) {
                 Icon(
                     Icons.Filled.SkipPrevious,
@@ -213,6 +222,7 @@ fun ControlsOverlay(
                     modifier = Modifier.size(34.dp)
                 )
             }
+            RepeatButton(mode = repeat, onClick = onCycleRepeat)
         }
 
         // ------------------------------------------------------------ inferior
@@ -312,6 +322,65 @@ private fun SleepBadge() {
         style = MaterialTheme.typography.labelSmall,
         color = VortexPalette.Amber
     )
+}
+
+/**
+ * Aleatorio y repetición. Van junto a anterior/siguiente y no en la fila de acciones de
+ * abajo porque modifican lo mismo que esos dos botones —por dónde sigue la cola— y ahí es
+ * donde los busca la mano.
+ *
+ * El estado se lee del color y, cuando está activo, de un punto bajo el icono: sólo el
+ * tinte se pierde de un vistazo en pantallas al sol.
+ */
+@Composable
+private fun ShuffleButton(enabled: Boolean, onClick: () -> Unit) {
+    OrderButton(
+        icon = Icons.Filled.Shuffle,
+        description = if (enabled) "Aleatorio activado" else "Aleatorio desactivado",
+        active = enabled,
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun RepeatButton(mode: RepeatMode, onClick: () -> Unit) {
+    OrderButton(
+        icon = if (mode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+        description = when (mode) {
+            RepeatMode.OFF -> "Sin repetición"
+            RepeatMode.ALL -> "Repetir toda la cola"
+            RepeatMode.ONE -> "Repetir esta pista"
+        },
+        active = mode != RepeatMode.OFF,
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun OrderButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    val tint = if (active) VortexPalette.Neon else VortexPalette.TextMid
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(24.dp))
+        Box(
+            Modifier
+                .padding(top = 3.dp)
+                .size(4.dp)
+                .background(
+                    if (active) VortexPalette.Neon else Color.Transparent,
+                    VortexShapes.extraSmall
+                )
+        )
+    }
 }
 
 @Composable

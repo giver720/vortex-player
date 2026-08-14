@@ -70,6 +70,7 @@ class PlaybackService : MediaSessionService() {
     private var usingVlc = false
     private var audioOnly = false
     private var sleepRunnable: Runnable? = null
+    private var order = PlaybackPrefs()
 
     /** Evita rebotar entre motores si VLC también falla con el mismo medio. */
     private var fallbackAttemptedFor: String? = null
@@ -92,6 +93,47 @@ class PlaybackService : MediaSessionService() {
         instance = this
         startPositionPersistence()
         startAudioEnhancer()
+        startOrderPreferences()
+    }
+
+    /**
+     * Repetición y aleatorio, recuperados de la sesión anterior y volcados al motor.
+     *
+     * Se observan en vez de leerse una sola vez porque el motor puede cambiar a mitad de
+     * reproducción: [applyOrder] se vuelve a llamar en cada cambio y así VLC hereda lo que
+     * el usuario había elegido en Media3, sin que la cola se ponga a sonar en orden.
+     */
+    private fun startOrderPreferences() {
+        scope.launch {
+            PlaybackPreferences.observe(this@PlaybackService).collect { prefs ->
+                order = prefs
+                PlaybackHub.setRepeat(prefs.repeat)
+                PlaybackHub.setShuffle(prefs.shuffle)
+                applyOrder()
+            }
+        }
+    }
+
+    private fun applyOrder() {
+        val player = currentPlayer
+        if (player.isCommandAvailable(Player.COMMAND_SET_REPEAT_MODE)) {
+            player.repeatMode = order.repeat.playerMode
+        }
+        if (player.isCommandAvailable(Player.COMMAND_SET_SHUFFLE_MODE)) {
+            player.shuffleModeEnabled = order.shuffle
+        }
+    }
+
+    /**
+     * Cambia el orden de reproducción. Se aplica al instante y se guarda después: esperar
+     * a que el disco conteste dejaría el botón sin responder durante un fotograma o dos.
+     */
+    private fun setOrder(prefs: PlaybackPrefs) {
+        order = prefs
+        PlaybackHub.setRepeat(prefs.repeat)
+        PlaybackHub.setShuffle(prefs.shuffle)
+        applyOrder()
+        scope.launch { PlaybackPreferences.save(this@PlaybackService, prefs) }
     }
 
     /**
@@ -175,6 +217,9 @@ class PlaybackService : MediaSessionService() {
 
         val items = request.entries.map { it.toMediaItem() }
         exoPlayer.setMediaItems(items, request.startIndex, request.positionMs)
+        // Después de poner la cola: el orden aleatorio se calcula sobre los medios ya
+        // cargados, así que hacerlo antes no barajaría nada.
+        applyOrder()
         exoControls.setVideoEnabled(!audioOnly)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -221,6 +266,7 @@ class PlaybackService : MediaSessionService() {
         usingVlc = true
         mediaSession?.player = vlc
         PlaybackHub.setPlayer(vlc, vlc)
+        applyOrder()
         // libVLC no expone sesión de audio: los efectos del sistema no le llegan.
         enhancer.release()
         PlaybackHub.setAudioCapabilities(null)
@@ -234,6 +280,7 @@ class PlaybackService : MediaSessionService() {
         usingVlc = false
         mediaSession?.player = exoPlayer
         PlaybackHub.setPlayer(exoPlayer, exoControls)
+        applyOrder()
         refreshAudioSession(audioSessionId)
     }
 
@@ -377,6 +424,17 @@ class PlaybackService : MediaSessionService() {
 
         fun setSleepTimer(durationMs: Long?) {
             instance?.setSleepTimer(durationMs)
+        }
+
+        /** Avanza el botón de repetición al siguiente estado de su ciclo. */
+        fun cycleRepeat() {
+            val service = instance ?: return
+            service.setOrder(service.order.copy(repeat = service.order.repeat.next()))
+        }
+
+        fun toggleShuffle() {
+            val service = instance ?: return
+            service.setOrder(service.order.copy(shuffle = !service.order.shuffle))
         }
 
         fun play(

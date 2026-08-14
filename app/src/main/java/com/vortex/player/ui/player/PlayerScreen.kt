@@ -107,6 +107,8 @@ fun PlayerScreen(
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
     val entry by PlaybackHub.currentEntry.collectAsStateWithLifecycle()
     val audioOnly by PlaybackHub.audioOnly.collectAsStateWithLifecycle()
+    val repeat by PlaybackHub.repeat.collectAsStateWithLifecycle()
+    val shuffle by PlaybackHub.shuffle.collectAsStateWithLifecycle()
     val uiState by rememberPlayerUiState(player)
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -225,6 +227,8 @@ fun PlayerScreen(
                     audioOnly = audioOnly,
                     speed = uiState.speed,
                     preset = preset,
+                    repeat = repeat,
+                    shuffle = shuffle,
                     onBack = onBack,
                     onToggleLock = { locked = !locked },
                     onPlayPause = {
@@ -239,6 +243,8 @@ fun PlayerScreen(
                     },
                     onPrevious = { player?.seekToPreviousMediaItem() },
                     onNext = { player?.seekToNextMediaItem() },
+                    onCycleRepeat = { PlaybackService.cycleRepeat() },
+                    onToggleShuffle = { PlaybackService.toggleShuffle() },
                     onToggleAudioOnly = { PlaybackService.setAudioOnly(!audioOnly) },
                     onOpenAspect = { panel = Panel.ASPECT },
                     onOpenPanel = { panel = it },
