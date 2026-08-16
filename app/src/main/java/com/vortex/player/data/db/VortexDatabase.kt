@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistEntity::class,
         PlaylistItemEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -131,6 +131,21 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v6 → v7 guarda el avance dentro de una lista, para poder enseñarlo en la cola. */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `downloads` ADD COLUMN `playlistCount` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `downloads` ADD COLUMN `playlistIndex` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `downloads` ADD COLUMN `playlistItems` TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -140,7 +155,7 @@ abstract class VortexDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
                     )
                     .build()
                     .also { instance = it }

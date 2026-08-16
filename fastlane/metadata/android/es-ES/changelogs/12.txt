@@ -1,0 +1,9 @@
+La pantalla de descargas, rehecha: miniaturas, pestañas y listas que por fin se ven.
+
+• Cada descarga es ahora una tarjeta con su miniatura. La imagen ya se consultaba y no se pintaba en ninguna parte: la cola era una lista de títulos donde no se distinguía de un vistazo qué se estaba bajando. Formato, calidad y posición en la lista pasan a cápsulas en vez de amontonarse en una línea de texto.
+
+• Los ajustes arrancan plegados tras un resumen del tipo "VÍDEO · MÁXIMA · LISTA". Antes había que pasar por formato, calidad, opciones, SponsorBlock y destino antes de ver la propia descarga. El formulario sigue entero a un toque, y la carpeta de destino se queda siempre a la vista.
+
+• La cola se parte en EN CURSO y HECHAS, con contador. Lo activo y el historial compartían lista, así que una descarga nueva aparecía entre decenas de entradas viejas.
+
+• Las listas enseñan por dónde van. Una lista se descarga en un único proceso, así que la cola sólo mostraba el porcentaje del fichero en curso, que vuelve a cero en cada pista: parecía que la descarga se reiniciaba sola. Ahora hay contador "3/24", una barra para la lista entera y otra para el fichero, y las pistas ya bajadas aparecen numeradas debajo. La notificación también pasa a contar la lista completa.

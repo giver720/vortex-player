@@ -107,6 +107,18 @@ class DownloadService : Service() {
         workspace.deleteRecursively()
         workspace.mkdirs()
 
+        // Avance dentro de la lista, si el enlace resulta serlo. Se va leyendo de la salida
+        // de yt-dlp, que anuncia posición y total, así que enterarse no cuesta ni una
+        // llamada extra ni espera antes de empezar a bajar.
+        //
+        // Vive fuera del `try` porque los guardados finales —el de éxito y el de error—
+        // reescriben la fila entera a partir de la que se leyó al empezar: si estas tres
+        // variables no llegaran hasta allí, el contador y la lista de pistas se borrarían
+        // justo al terminar, que es cuando más se quieren ver.
+        var playlistIndex = 0
+        var playlistCount = 0
+        val playlistItems = mutableListOf<String>()
+
         try {
             val spotify = SpotifyJobs.readTags(job.tagsJson)
 
@@ -150,6 +162,34 @@ class DownloadService : Service() {
             ) { progress, eta, line ->
                 val clamped = (progress / 100f).coerceIn(0f, 1f)
                 val now = System.currentTimeMillis()
+
+                var positionChanged = false
+                PlaylistProgress.position(line)?.let { (index, total) ->
+                    if (index != playlistIndex || total != playlistCount) {
+                        playlistIndex = index
+                        playlistCount = total
+                        positionChanged = true
+                    }
+                }
+                // Sólo se lleva la cuenta de nombres si esto es una lista. yt-dlp anuncia la
+                // posición antes que el fichero, así que para cuando llega el primer nombre
+                // ya se sabe; en una descarga suelta se ahorra la escritura en disco.
+                PlaylistProgress.itemName(line)?.takeIf { playlistCount > 1 }?.let { name ->
+                    // Un vídeo con pistas separadas anuncia varios ficheros seguidos; sólo
+                    // interesa el primer nombre nuevo de cada elemento.
+                    if (playlistItems.lastOrNull() != name) {
+                        playlistItems += name
+                        positionChanged = true
+                    }
+                }
+                if (positionChanged) {
+                    val snapshot = playlistItems.toList()
+                    val index = playlistIndex
+                    val total = playlistCount
+                    scope.launch {
+                        repository.updatePlaylistPosition(job.id, index, total, snapshot)
+                    }
+                }
                 // yt-dlp emite varias líneas por segundo. Escribir cada una castigaría el
                 // disco sin que se note en pantalla, así que sólo se persiste cuando el
                 // porcentaje avanza medio punto o cuando pasa medio segundo.
@@ -172,7 +212,16 @@ class DownloadService : Service() {
                             line.trim()
                         )
                     }
-                    notify(named.title, line.trim(), clamped)
+                    // En la notificación manda el avance de la lista entera: una barra que
+                    // vuelve a cero cada dos minutos no dice nada de lo que queda.
+                    notify(
+                        named.title,
+                        buildString {
+                            if (playlistCount > 1) append("$playlistIndex/$playlistCount · ")
+                            append(line.trim())
+                        },
+                        PlaylistProgress.overall(playlistIndex, playlistCount, clamped)
+                    )
                 }
                 }
             }.onFailure { error ->
@@ -223,7 +272,10 @@ class DownloadService : Service() {
                     outputLocation = result.location,
                     playlistFolder = result.playlistFolder,
                     fileCount = result.fileCount,
-                    finishedAt = System.currentTimeMillis()
+                    finishedAt = System.currentTimeMillis(),
+                    playlistIndex = playlistIndex,
+                    playlistCount = playlistCount,
+                    playlistItems = playlistItems.joinToString("\n")
                 )
             )
             // La biblioteca se refresca sola para que lo recién bajado aparezca ya.
@@ -234,7 +286,12 @@ class DownloadService : Service() {
                 job.copy(
                     status = if (cancelled) DownloadStatus.CANCELLED else DownloadStatus.FAILED,
                     errorMessage = if (cancelled) null else e.message ?: e.toString(),
-                    finishedAt = System.currentTimeMillis()
+                    finishedAt = System.currentTimeMillis(),
+                    // Se conserva por dónde iba: en una lista larga, saber que falló en la
+                    // pista 31 de 40 es la mitad del diagnóstico.
+                    playlistIndex = playlistIndex,
+                    playlistCount = playlistCount,
+                    playlistItems = playlistItems.joinToString("\n")
                 )
             )
             workspace.deleteRecursively()

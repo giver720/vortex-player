@@ -97,6 +97,9 @@ class DownloadRepository(private val dao: DownloadDao) {
 
     suspend fun updateStatus(id: Long, status: DownloadStatus) = dao.updateStatus(id, status)
 
+    suspend fun updatePlaylistPosition(id: Long, index: Int, count: Int, items: List<String>) =
+        dao.updatePlaylistPosition(id, index, count, items.joinToString("\n"))
+
     suspend fun requeueInterrupted() = dao.requeueInterrupted()
 
     suspend fun activeCount(): Int = dao.activeCount()
@@ -111,7 +114,12 @@ class DownloadRepository(private val dao: DownloadDao) {
                 etaSeconds = -1,
                 statusLine = "",
                 errorMessage = null,
-                finishedAt = null
+                finishedAt = null,
+                // Un reintento empieza la lista de cero: conservar el contador enseñaría
+                // "17/24" y las pistas de la vez anterior sobre una descarga recién nacida.
+                playlistIndex = 0,
+                playlistCount = 0,
+                playlistItems = ""
             )
         )
     }

@@ -47,6 +47,20 @@ interface DownloadDao {
     @Query("UPDATE downloads SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: DownloadStatus)
 
+    /**
+     * Avance dentro de la lista. Va aparte de [updateProgress] porque cambia una vez por
+     * pista y no varias veces por segundo, y porque escribir la lista de nombres a ese
+     * ritmo castigaría el disco sin que se notara en pantalla.
+     */
+    @Query(
+        """
+        UPDATE downloads
+        SET playlistIndex = :index, playlistCount = :count, playlistItems = :items
+        WHERE id = :id
+        """
+    )
+    suspend fun updatePlaylistPosition(id: Long, index: Int, count: Int, items: String)
+
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun delete(id: Long)
 
@@ -77,7 +91,9 @@ interface DownloadDao {
      */
     @Query(
         """
-        UPDATE downloads SET status = 'QUEUED', progress = 0, statusLine = ''
+        UPDATE downloads
+        SET status = 'QUEUED', progress = 0, statusLine = '',
+            playlistIndex = 0, playlistCount = 0, playlistItems = ''
         WHERE status IN ('FETCHING','DOWNLOADING','PROCESSING','MOVING')
         """
     )

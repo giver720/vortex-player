@@ -1,0 +1,9 @@
+The downloads screen, rebuilt: thumbnails, tabs, and playlists you can finally see.
+
+• Every download is now a card with its thumbnail. The image was already being fetched and never painted anywhere: the queue was a list of titles where you couldn't tell at a glance what was coming down. Format, quality and playlist position move into pills instead of piling up on one line of text.
+
+• Settings start folded behind a summary like "VÍDEO · MÁXIMA · LISTA". You used to scroll past format, quality, options, SponsorBlock and destination before reaching the download itself. The full form is still one tap away, and the destination folder stays visible at all times.
+
+• The queue splits into IN PROGRESS and DONE, with counts. Active downloads and history shared one list, so a new download showed up among dozens of old entries.
+
+• Playlists show how far along they are. A playlist downloads in a single process, so the queue only showed the percentage of the current file, which resets on every track: it looked like the download kept restarting. There is now a "3/24" counter, one bar for the whole playlist and another for the file, and finished tracks are listed numbered underneath. The notification counts the whole playlist too.

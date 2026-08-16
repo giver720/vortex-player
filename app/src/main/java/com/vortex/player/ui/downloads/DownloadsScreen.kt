@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,7 +32,11 @@ import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Stop
@@ -51,19 +57,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.vortex.player.data.db.DownloadEntity
 import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DestinationStore
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadStatus
+import com.vortex.player.download.PlaylistProgress
 import com.vortex.player.download.SponsorCategory
 import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.SponsorSettings
@@ -120,6 +131,26 @@ fun DownloadsScreen(
     }
 
     var confirmClearAll by remember { mutableStateOf(false) }
+
+    // Los ajustes arrancan plegados. Se cambian una vez y valen para todas las descargas,
+    // mientras que la cola se mira constantemente: tenerlos siempre desplegados empujaba
+    // lo que de verdad se consulta al fondo de la pantalla.
+    var optionsExpanded by remember { mutableStateOf(false) }
+    var showDone by remember { mutableStateOf(false) }
+
+    val pending = remember(downloads) { downloads.filter { !it.status.isTerminal } }
+    val finished = remember(downloads) { downloads.filter { it.status.isTerminal } }
+    val visible = if (showDone) finished else pending
+
+    val optionsSummary = remember(kind, quality, codec, bitrate, playlist, subtitles, sponsorSettings) {
+        buildList {
+            add(kind.label)
+            if (kind == DownloadKind.VIDEO) add(quality.label) else add(codec.label)
+            if (playlist) add("LISTA")
+            if (subtitles && kind == DownloadKind.VIDEO) add("SUBS")
+            if (sponsorSettings.isActive) add("SPONSOR")
+        }.joinToString(" · ")
+    }
 
     LaunchedEffect(message) {
         if (message != null) {
@@ -190,7 +221,16 @@ fun DownloadsScreen(
                 item { SpotifyNotice(resolving) }
             }
 
-            if (!isSpotify) {
+            item {
+                OptionsSummaryBar(
+                    summary = optionsSummary,
+                    destination = DestinationStore.displayName(context, destination),
+                    expanded = optionsExpanded,
+                    onToggle = { optionsExpanded = !optionsExpanded }
+                )
+            }
+
+            if (optionsExpanded && !isSpotify) {
                 item {
                     SectionLabel("FORMATO")
                     Row(
@@ -208,7 +248,7 @@ fun DownloadsScreen(
                 }
             }
 
-            item {
+            if (optionsExpanded) item {
                 // De Spotify siempre sale audio, así que las opciones de vídeo sobran.
                 if (kind == DownloadKind.VIDEO && !isSpotify) {
                     SectionLabel("CALIDAD DE VÍDEO")
@@ -233,7 +273,7 @@ fun DownloadsScreen(
                 }
             }
 
-            if (!isSpotify) {
+            if (optionsExpanded && !isSpotify) {
                 item {
                     SectionLabel("OPCIONES")
                     Row(
@@ -266,7 +306,7 @@ fun DownloadsScreen(
                 }
             }
 
-            item {
+            if (optionsExpanded) item {
                 SponsorBlockSection(
                     settings = sponsorSettings,
                     onMode = viewModel::setSponsorMode,
@@ -274,7 +314,7 @@ fun DownloadsScreen(
                 )
             }
 
-            item {
+            if (optionsExpanded) item {
                 SectionLabel("DESTINO")
                 Row(
                     modifier = Modifier
@@ -325,12 +365,22 @@ fun DownloadsScreen(
                         .padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "COLA · ${downloads.size}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = VortexPalette.TextLow,
-                        modifier = Modifier.weight(1f)
+                    // Lo activo y el historial compartían lista, así que una descarga nueva
+                    // aparecía entre decenas de entradas viejas.
+                    QueueTab(
+                        label = "EN CURSO",
+                        count = pending.size,
+                        selected = !showDone,
+                        onClick = { showDone = false }
                     )
+                    Spacer(Modifier.width(16.dp))
+                    QueueTab(
+                        label = "HECHAS",
+                        count = finished.size,
+                        selected = showDone,
+                        onClick = { showDone = true }
+                    )
+                    Spacer(Modifier.weight(1f))
                     if (downloads.isNotEmpty()) {
                         QueueMenu(
                             hasFinished = downloads.any { it.status.isTerminal },
@@ -345,7 +395,7 @@ fun DownloadsScreen(
                 }
             }
 
-            items(downloads, key = { it.id }) { job ->
+            items(visible, key = { it.id }) { job ->
                 DownloadRow(
                     job = job,
                     isActive = job.id == activeJobId,
@@ -355,11 +405,18 @@ fun DownloadsScreen(
                 )
             }
 
-            if (downloads.isEmpty()) {
+            if (visible.isEmpty()) {
                 item {
                     Text(
-                        text = "Nada en la cola. Pega un enlace de YouTube, Vimeo, Twitter, " +
-                            "Twitch, TikTok o cualquier otra fuente compatible.",
+                        text = when {
+                            showDone -> "Aún no has terminado ninguna descarga."
+                            // Sin este aviso, terminar la última descarga vacía la pestaña
+                            // y parece que lo bajado se ha esfumado.
+                            finished.isNotEmpty() ->
+                                "No queda nada descargando. Lo ya bajado está en HECHAS."
+                            else -> "Nada en la cola. Pega un enlace de YouTube, Vimeo, " +
+                                "Twitter, Twitch, TikTok o cualquier otra fuente compatible."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = VortexPalette.TextLow,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 18.dp)
@@ -740,6 +797,85 @@ private fun UrlField(
     }
 }
 
+/**
+ * Resumen plegable de los ajustes.
+ *
+ * Plegada, la barra sigue diciendo con qué se va a bajar —formato, calidad, si hay lista—,
+ * que es lo único que se comprueba de un vistazo antes de pegar un enlace. El formulario
+ * entero sigue estando a un toque para cuando de verdad haya que cambiar algo.
+ */
+@Composable
+private fun OptionsSummaryBar(
+    summary: String,
+    destination: String,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.small)
+            .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelMedium,
+                color = VortexPalette.TextMid,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            // El destino se queda a la vista aunque los ajustes estén plegados: "¿dónde ha
+            // ido a parar el archivo?" es lo que más se pregunta, y esconderlo detrás de un
+            // desplegable sería peor que la pantalla larga que estamos arreglando.
+            Text(
+                text = "→ $destination",
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextLow,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = if (expanded) "Plegar ajustes" else "Desplegar ajustes",
+            tint = VortexPalette.TextLow,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/** Pestaña de la cola. El subrayado marca la activa; el número, cuánto hay detrás. */
+@Composable
+private fun QueueTab(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Text(
+            text = "$label · $count",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) VortexPalette.Neon else VortexPalette.TextLow,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Box(
+            Modifier
+                .width(if (selected) 28.dp else 0.dp)
+                .height(2.dp)
+                .background(VortexPalette.Neon)
+        )
+    }
+}
+
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -798,6 +934,182 @@ private fun Chip(
     )
 }
 
+/**
+ * Formato de salida, tal y como acabará el fichero. En vídeo siempre es MP4 desde que se
+ * fuerza el envase; en audio, el códec que se haya pedido.
+ */
+private val DownloadEntity.formatLabel: String
+    get() = if (kind == DownloadKind.VIDEO) "MP4" else audioCodec.label
+
+/**
+ * Miniatura de la descarga.
+ *
+ * El dato ya se guardaba al consultar la fuente, pero la cola no lo pintaba: era una lista
+ * de títulos donde no se distinguía de un vistazo qué se estaba bajando. Cuando la fuente
+ * no da imagen —o aún no se ha consultado— se cae a un icono según el formato, que al
+ * menos separa vídeo de música.
+ */
+@Composable
+private fun JobThumbnail(job: DownloadEntity) {
+    Box(
+        modifier = Modifier
+            .width(96.dp)
+            .height(54.dp)
+            .background(VortexPalette.GraphiteHigh, VortexShapes.small),
+        contentAlignment = Alignment.Center
+    ) {
+        if (job.thumbnailUrl != null) {
+            AsyncImage(
+                model = job.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(VortexShapes.small)
+            )
+        } else {
+            Icon(
+                imageVector = if (job.kind == DownloadKind.VIDEO) {
+                    Icons.Filled.Movie
+                } else {
+                    Icons.Filled.MusicNote
+                },
+                contentDescription = null,
+                tint = VortexPalette.Outline,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+/** Cápsula de metadato: formato, calidad, posición en la lista. */
+@Composable
+private fun Badge(text: String, filled: Boolean = false) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (filled) VortexPalette.Graphite else VortexPalette.TextMid,
+        modifier = Modifier
+            .background(
+                if (filled) VortexPalette.Neon else Color.Transparent,
+                VortexShapes.extraSmall
+            )
+            .then(
+                if (filled) {
+                    Modifier
+                } else {
+                    Modifier.border(0.5.dp, VortexPalette.Outline, VortexShapes.extraSmall)
+                }
+            )
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+    )
+}
+
+/** Barra de avance. Existe suelta porque con lista se pintan dos, una sobre otra. */
+@Composable
+private fun ProgressBar(
+    fraction: Float,
+    height: Dp,
+    modifier: Modifier = Modifier,
+    dim: Boolean = false
+) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(height)
+            .background(VortexPalette.Outline)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .fillMaxSize()
+                .background(
+                    if (dim) {
+                        Brush.horizontalGradient(
+                            listOf(
+                                VortexPalette.Cyan.copy(alpha = 0.45f),
+                                VortexPalette.Neon.copy(alpha = 0.45f)
+                            )
+                        )
+                    } else {
+                        Brush.horizontalGradient(
+                            listOf(VortexPalette.Cyan, VortexPalette.Neon)
+                        )
+                    }
+                )
+        )
+    }
+}
+
+/**
+ * Lo que la lista ya ha traído, pista a pista.
+ *
+ * Es la respuesta a "sólo veo un vídeo": una lista es un único trabajo en la cola porque
+ * yt-dlp la descarga en un solo proceso, así que en vez de partirla en filas —lo que
+ * costaría la carpeta y la numeración que la propia lista genera— se despliega aquí dentro.
+ */
+@Composable
+private fun PlaylistItems(job: DownloadEntity) {
+    val items = remember(job.playlistItems) {
+        job.playlistItems.split('\n').filter { it.isNotBlank() }
+    }
+    if (job.playlistCount <= 1 || items.isEmpty()) return
+
+    var expanded by remember { mutableStateOf(false) }
+    // Plegada enseña sólo la cola de la lista: con cuarenta pistas, la tarjeta ocuparía
+    // varias pantallas y enterraría el resto de la cola.
+    val shown = if (expanded) items else items.takeLast(3)
+    val hidden = items.size - shown.size
+
+    Column(Modifier.padding(top = 8.dp)) {
+        if (hidden > 0 && !expanded) {
+            Text(
+                text = "+$hidden anterior${if (hidden == 1) "" else "es"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextLow,
+                modifier = Modifier
+                    .clickable { expanded = true }
+                    .padding(vertical = 3.dp)
+            )
+        }
+        // La posición se calcula por desplazamiento y no buscando el nombre: dos pistas de
+        // una misma lista pueden llamarse igual y todas apuntarían a la primera.
+        val offset = items.size - shown.size
+        shown.forEachIndexed { position, name ->
+            val number = offset + position + 1
+            val isCurrent = number == items.size && !job.status.isTerminal
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(vertical = 2.dp)
+            ) {
+                Text(
+                    text = if (isCurrent) "▶" else "✓",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isCurrent) VortexPalette.Cyan else VortexPalette.Neon
+                )
+                Text(
+                    text = "$number. $name",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isCurrent) VortexPalette.TextHigh else VortexPalette.TextLow,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (expanded && items.size > 3) {
+            Text(
+                text = "Plegar",
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextLow,
+                modifier = Modifier
+                    .clickable { expanded = false }
+                    .padding(vertical = 3.dp)
+            )
+        }
+    }
+}
+
 @Composable
 private fun DownloadRow(
     job: DownloadEntity,
@@ -825,7 +1137,9 @@ private fun DownloadRow(
             )
             .padding(12.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Top) {
+            JobThumbnail(job)
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = job.title.ifBlank { job.url },
@@ -834,16 +1148,31 @@ private fun DownloadRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Las etiquetas van en su propia fila y en cápsulas: antes competían con el
+                // estado en una única línea de texto suelto y no se distinguía qué era qué.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(top = 5.dp)
+                ) {
+                    Badge(text = job.formatLabel)
+                    if (job.kind == DownloadKind.VIDEO) {
+                        Badge(text = job.videoQuality.label)
+                    }
+                    if (job.playlistCount > 1) {
+                        Badge(
+                            text = "LISTA ${job.playlistIndex}/${job.playlistCount}",
+                            filled = true
+                        )
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 5.dp)
+                ) {
                     Text(
                         text = job.status.label,
                         style = MaterialTheme.typography.labelSmall,
                         color = accent
-                    )
-                    Text(
-                        text = job.kind.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = VortexPalette.TextLow
                     )
                     if (job.etaSeconds > 0 && !job.status.isTerminal) {
                         Text(
@@ -882,24 +1211,29 @@ private fun DownloadRow(
         }
 
         if (!job.status.isTerminal) {
-            Box(
-                Modifier
-                    .padding(top = 8.dp)
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(VortexPalette.Outline)
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(job.progress)
-                        .fillMaxSize()
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(VortexPalette.Cyan, VortexPalette.Neon)
-                            )
-                        )
+            val isPlaylist = job.playlistCount > 1
+
+            // Con lista, la barra gruesa es la de todo el trabajo y la fina la del fichero
+            // en curso. Al revés —que es como estaba— sólo se veía una barra que volvía a
+            // cero en cada pista, sin pista alguna de cuánto quedaba en realidad.
+            ProgressBar(
+                fraction = PlaylistProgress.overall(
+                    job.playlistIndex,
+                    job.playlistCount,
+                    job.progress
+                ),
+                height = 3.dp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            if (isPlaylist) {
+                ProgressBar(
+                    fraction = job.progress,
+                    height = 2.dp,
+                    dim = true,
+                    modifier = Modifier.padding(top = 3.dp)
                 )
             }
+
             if (job.statusLine.isNotBlank()) {
                 Text(
                     text = job.statusLine,
@@ -911,6 +1245,8 @@ private fun DownloadRow(
                 )
             }
         }
+
+        PlaylistItems(job)
 
         job.errorMessage?.let { error ->
             Text(

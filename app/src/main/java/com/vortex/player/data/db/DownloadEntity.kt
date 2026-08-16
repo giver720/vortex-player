@@ -67,6 +67,20 @@ data class DownloadEntity(
 
     /** Carpeta creada para la lista, si el enlace era una playlist. */
     val playlistFolder: String? = null,
+
+    /**
+     * Avance dentro de la lista, cuando el enlace resultó serlo. Una lista se descarga en
+     * un único proceso de yt-dlp, así que sin esto la fila sólo podía enseñar el
+     * porcentaje del fichero en curso, que vuelve a cero en cada pista.
+     *
+     * [playlistCount] es 0 mientras no se sepa, y sigue en 0 para un enlace suelto: es lo
+     * que distingue "una lista de un elemento" de "esto no era una lista".
+     */
+    val playlistCount: Int = 0,
+    val playlistIndex: Int = 0,
+
+    /** Nombres de lo ya descargado de la lista, uno por línea y en orden. */
+    val playlistItems: String = "",
     /** Destino final ya resuelto, en forma legible para el usuario. */
     val outputLocation: String? = null,
     val fileCount: Int = 0,
