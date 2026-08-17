@@ -48,6 +48,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -118,6 +120,10 @@ fun DownloadsScreen(
     val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
     val sponsorSettings by viewModel.sponsor.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val engineVersion by viewModel.engineVersion.collectAsStateWithLifecycle()
+    val updatingEngine by viewModel.updatingEngine.collectAsStateWithLifecycle()
+    val autoUpdateEngine by viewModel.autoUpdateEngine.collectAsStateWithLifecycle()
+    val lastEngineUpdate by viewModel.lastEngineUpdate.collectAsStateWithLifecycle()
 
     // Mientras haya una lista resuelta esperando decisión, ocupa la pantalla entera: es
     // el paso siguiente del mismo flujo, no una capa encima de la cola.
@@ -346,6 +352,17 @@ fun DownloadsScreen(
                     settings = sponsorSettings,
                     onMode = viewModel::setSponsorMode,
                     onToggleCategory = viewModel::toggleSponsorCategory
+                )
+            }
+
+            if (optionsExpanded) item {
+                EnginePanel(
+                    version = engineVersion,
+                    updating = updatingEngine,
+                    autoUpdate = autoUpdateEngine,
+                    lastResult = lastEngineUpdate,
+                    onUpdate = viewModel::updateEngine,
+                    onToggleAuto = viewModel::setAutoUpdate
                 )
             }
 
@@ -994,6 +1011,96 @@ private fun QueueTab(
                 .height(2.dp)
                 .background(VortexPalette.Neon)
         )
+    }
+}
+
+/**
+ * Estado del motor de descargas.
+ *
+ * yt-dlp envejece mal: YouTube cambia su cifrado de firmas cada pocas semanas y una
+ * versión de hace un mes empieza a fallar en descargas que antes iban. La actualización
+ * automática ya existía, pero era invisible: no se veía qué versión había, ni cuándo se
+ * actualizó, ni se podía apagar, y el botón manual era un icono suelto en la cabecera sin
+ * ninguna explicación. Cuando algo deja de descargar, esto es lo primero que hay que mirar.
+ */
+@Composable
+private fun EnginePanel(
+    version: String,
+    updating: Boolean,
+    autoUpdate: Boolean,
+    lastResult: String?,
+    onUpdate: () -> Unit,
+    onToggleAuto: (Boolean) -> Unit
+) {
+    SectionLabel("MOTOR DE DESCARGAS")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Outline, VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "yt-dlp $version",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = VortexPalette.TextHigh,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = lastResult ?: "Sin actualizaciones registradas todavía",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = if (updating) "ACTUALIZANDO…" else "ACTUALIZAR",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (updating) VortexPalette.TextLow else VortexPalette.Graphite,
+                modifier = Modifier
+                    .background(
+                        if (updating) VortexPalette.GraphiteHigh else VortexPalette.Neon,
+                        VortexShapes.small
+                    )
+                    .clickable(enabled = !updating, onClick = onUpdate)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 10.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "ACTUALIZAR SOLO",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = VortexPalette.TextMid
+                )
+                Text(
+                    text = "Una vez al día, al empezar la primera descarga. Desactívalo si " +
+                        "prefieres controlarlo tú; ten en cuenta que una versión vieja deja " +
+                        "de funcionar con YouTube en cuestión de semanas.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow
+                )
+            }
+            Switch(
+                checked = autoUpdate,
+                onCheckedChange = onToggleAuto,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = VortexPalette.Graphite,
+                    checkedTrackColor = VortexPalette.Neon,
+                    uncheckedThumbColor = VortexPalette.TextLow,
+                    uncheckedTrackColor = VortexPalette.GraphiteHigh
+                )
+            )
+        }
     }
 }
 

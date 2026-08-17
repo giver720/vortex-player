@@ -126,6 +126,15 @@ class DownloadService : Service() {
                 throw IllegalStateException(why)
             }
 
+            val free = DestinationStore.freeSpaceBytes(this)
+            if (free < DestinationStore.MIN_FREE_BYTES) {
+                throw IllegalStateException(
+                    "Quedan ${free / (1024 * 1024)} MB libres en el móvil y hacen falta al " +
+                        "menos ${DestinationStore.MIN_FREE_BYTES / (1024 * 1024)} MB para " +
+                        "descargar con margen. Libera espacio y reintenta."
+                )
+            }
+
             val spotify = SpotifyJobs.readTags(job.tagsJson)
 
             // Una canción de Spotify ya viene con título y artista del catálogo, así que

@@ -134,6 +134,25 @@ object DestinationStore {
      * Python no sabe escribir en un `content://`, así que se descarga aquí y luego se
      * traslada al destino elegido.
      */
+    /**
+     * Espacio libre donde yt-dlp descarga, en bytes.
+     *
+     * Importa el de la zona de trabajo y no el del destino: aquí se baja todo, y en vídeo
+     * hacen falta las dos pistas por separado más el fichero ya unido, de modo que el pico
+     * puede triplicar el tamaño final.
+     */
+    fun freeSpaceBytes(context: Context): Long =
+        runCatching {
+            (context.getExternalFilesDir(null) ?: context.filesDir).usableSpace
+        }.getOrDefault(Long.MAX_VALUE)
+
+    /**
+     * Suelo por debajo del cual ni se intenta. Quedarse sin espacio a mitad no da un error
+     * claro: ffmpeg falla al unir con un mensaje que no dice nada de disco lleno, y lo que
+     * el usuario ve es una descarga rota sin motivo.
+     */
+    const val MIN_FREE_BYTES = 500L * 1024 * 1024
+
     fun workspace(context: Context, jobId: Long): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "descargas/$jobId")
             .apply { mkdirs() }

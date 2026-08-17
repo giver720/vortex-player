@@ -1,0 +1,9 @@
+Control over the download engine, and a warning when storage is full.
+
+• New DOWNLOAD ENGINE section inside settings. It shows which yt-dlp version you're running, what happened on the last update, and gives you a button to update it whenever you want. This matters more than it sounds: when YouTube changes its signature cipher, every download fails at once and this is exactly the fix. Until now it was an unlabelled icon in the header.
+
+• Automatic updates can be turned on or off, and are finally visible. They run once a day before the first download. You can switch them off to stay in control, bearing in mind that an old yt-dlp stops working with YouTube within weeks.
+
+• Fixed: updating by hand left no record and didn't reset the daily timer, so the automatic update fired again right afterwards for nothing.
+
+• Free space is checked before starting. Running out midway gave no clear error: merging the tracks failed with a message that never mentioned storage, and what you saw was a broken download for no reason. Now you're warned up front, with the space left and the space needed.

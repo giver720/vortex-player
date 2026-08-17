@@ -1,0 +1,9 @@
+Control del motor de descargas y aviso de espacio lleno.
+
+• Nuevo apartado MOTOR DE DESCARGAS, dentro de los ajustes. Muestra qué versión de yt-dlp estás usando, qué pasó en la última actualización, y tiene un botón para actualizarlo cuando quieras. Importa más de lo que parece: cuando YouTube cambia su cifrado, todas las descargas fallan de golpe y la solución es justo esa. Hasta ahora era un icono sin nombre en la cabecera.
+
+• La actualización automática se puede activar o desactivar, y por fin se ve. Corre una vez al día antes de la primera descarga. Puedes apagarla si prefieres controlarlo tú, teniendo en cuenta que una versión vieja de yt-dlp deja de funcionar con YouTube en cuestión de semanas.
+
+• Corregido: actualizar a mano no dejaba constancia ni reiniciaba el contador diario, así que la actualización automática se volvía a lanzar justo después sin necesidad.
+
+• Comprobación de espacio libre antes de empezar. Quedarse sin espacio a mitad no daba un error claro: la unión de pistas fallaba con un mensaje que no mencionaba el disco, y lo que veías era una descarga rota sin motivo. Ahora se avisa antes, con el espacio que queda y el que hace falta.

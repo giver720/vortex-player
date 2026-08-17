@@ -27,10 +27,12 @@ import com.vortex.player.spotify.SpotifyResult
 import com.vortex.player.spotify.markOwned
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
@@ -111,6 +113,9 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             _engineReady.value = YtDlpEngine.ensureInitialized(getApplication())
             if (_engineReady.value == false) {
                 _message.value = "yt-dlp no arrancó: ${YtDlpEngine.initError}"
+            } else {
+                // La versión sólo se puede leer con el motor ya en pie.
+                loadEngineVersion()
             }
         }
     }
@@ -126,6 +131,21 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     fun setQuality(value: VideoQuality) { _quality.value = value }
 
     fun setContainer(value: VideoContainer) { _container.value = value }
+
+    /** Versión de yt-dlp en uso. Se lee fuera del hilo principal: toca disco. */
+    private val _engineVersion = MutableStateFlow("…")
+    val engineVersion: StateFlow<String> = _engineVersion.asStateFlow()
+
+    private val _updatingEngine = MutableStateFlow(false)
+    val updatingEngine: StateFlow<Boolean> = _updatingEngine.asStateFlow()
+
+    val autoUpdateEngine: StateFlow<Boolean> =
+        EnginePreferences.autoUpdateEnabled(getApplication())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val lastEngineUpdate: StateFlow<String?> =
+        EnginePreferences.lastResult(getApplication())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
     fun setCodec(value: AudioCodec) { _codec.value = value }
     fun setBitrate(value: AudioBitrate) { _bitrate.value = value }
     fun togglePlaylist() { _playlist.value = !_playlist.value }
@@ -387,10 +407,37 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Actualiza yt-dlp a petición del usuario.
+     *
+     * Se anota el resultado igual que hace la actualización automática. Antes no se
+     * anotaba: una actualización manual no dejaba rastro y tampoco reiniciaba el contador
+     * diario, así que la automática volvía a lanzarse justo después para nada.
+     */
     fun updateEngine() {
+        if (_updatingEngine.value) return
         viewModelScope.launch {
+            _updatingEngine.value = true
             _message.value = "Actualizando yt-dlp…"
-            _message.value = YtDlpEngine.updateBinary(getApplication())
+            val result = YtDlpEngine.updateBinary(getApplication())
+            EnginePreferences.record(getApplication(), result)
+            _engineVersion.value = withContext(Dispatchers.IO) {
+                YtDlpEngine.versionOrUnknown(getApplication())
+            }
+            _message.value = result
+            _updatingEngine.value = false
+        }
+    }
+
+    fun setAutoUpdate(enabled: Boolean) {
+        viewModelScope.launch { EnginePreferences.setAutoUpdate(getApplication(), enabled) }
+    }
+
+    private fun loadEngineVersion() {
+        viewModelScope.launch {
+            _engineVersion.value = withContext(Dispatchers.IO) {
+                YtDlpEngine.versionOrUnknown(getApplication())
+            }
         }
     }
 }
