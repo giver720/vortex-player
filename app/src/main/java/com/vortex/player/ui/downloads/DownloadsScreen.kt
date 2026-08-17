@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -73,6 +74,7 @@ import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DestinationStore
 import com.vortex.player.download.DownloadKind
+import com.vortex.player.download.DownloadLog
 import com.vortex.player.download.DownloadStatus
 import com.vortex.player.download.PlaylistProgress
 import com.vortex.player.download.SponsorCategory
@@ -133,6 +135,7 @@ fun DownloadsScreen(
     }
 
     var confirmClearAll by remember { mutableStateOf(false) }
+    var showLog by remember { mutableStateOf(false) }
 
     // Los ajustes arrancan plegados. Se cambian una vez y valen para todas las descargas,
     // mientras que la cola se mira constantemente: tenerlos siempre desplegados empujaba
@@ -413,17 +416,19 @@ fun DownloadsScreen(
                         onClick = { showDone = true }
                     )
                     Spacer(Modifier.weight(1f))
-                    if (downloads.isNotEmpty()) {
-                        QueueMenu(
+                    // El menú va siempre, aunque no haya nada en la cola: si sólo
+                    // apareciera con descargas, el registro quedaría inalcanzable justo
+                    // después de vaciarla, que es cuando más falta hace consultarlo.
+                    QueueMenu(
                             hasFinished = downloads.any { it.status.isTerminal },
+                            onShowLog = { showLog = true },
                             hasPending = downloads.any { !it.status.isTerminal },
                             failedCount = failedCount,
                             onRetryFailed = viewModel::retryAllFailed,
                             onCancelPending = viewModel::cancelPending,
                             onClearFinished = viewModel::clearFinished,
                             onClearAll = { confirmClearAll = true }
-                        )
-                    }
+                    )
                 }
             }
 
@@ -455,6 +460,10 @@ fun DownloadsScreen(
                     )
                 }
             }
+        }
+
+        if (showLog) {
+            DownloadLogDialog(onDismiss = { showLog = false })
         }
 
         if (confirmClearAll) {
@@ -611,9 +620,83 @@ private fun SponsorBlockSection(
 }
 
 /** Acciones que afectan a la cola entera, agrupadas para no llenar la cabecera. */
+/**
+ * Registro de incidencias.
+ *
+ * Existe porque hasta ahora todo lo que fallaba iba a `Log.w`, que exige cable, ordenador
+ * y logcat: en la práctica nadie lo lee y cada fallo había que reproducirlo a ciegas.
+ * Poder leerlo y compartirlo desde el móvil es la diferencia entre diagnosticar con un
+ * mensaje o con cinco rondas de preguntas.
+ */
+@Composable
+private fun DownloadLogDialog(onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val entries = remember { DownloadLog.entries(context) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = VortexPalette.GraphiteRaised,
+        titleContentColor = VortexPalette.TextHigh,
+        textContentColor = VortexPalette.TextMid,
+        title = { Text("REGISTRO", style = MaterialTheme.typography.labelLarge) },
+        text = {
+            if (entries.isEmpty()) {
+                Text(
+                    text = "Sin incidencias registradas. Aquí aparece lo que falle al " +
+                        "descargar o al guardar en el destino.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    entries.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VortexPalette.TextMid,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val text = DownloadLog.shareText(
+                        context,
+                        appVersion = com.vortex.player.BuildConfig.VERSION_NAME,
+                        androidRelease = android.os.Build.VERSION.RELEASE
+                    )
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, text)
+                    }
+                    context.startActivity(
+                        android.content.Intent.createChooser(send, "Compartir registro")
+                    )
+                    onDismiss()
+                }
+            ) {
+                Text("COMPARTIR", color = VortexPalette.Neon)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    DownloadLog.clear(context)
+                    onDismiss()
+                }
+            ) {
+                Text("BORRAR", color = VortexPalette.TextLow)
+            }
+        }
+    )
+}
+
 @Composable
 private fun QueueMenu(
     hasFinished: Boolean,
+    onShowLog: () -> Unit,
     hasPending: Boolean,
     failedCount: Int,
     onRetryFailed: () -> Unit,
@@ -667,9 +750,15 @@ private fun QueueMenu(
                     onClearFinished()
                 }
             }
-            QueueMenuItem(label = "Vaciar la cola entera", tint = VortexPalette.Magenta) {
+            QueueMenuItem(label = "Ver registro de incidencias") {
                 open = false
-                onClearAll()
+                onShowLog()
+            }
+            if (hasPending || hasFinished) {
+                QueueMenuItem(label = "Vaciar la cola entera", tint = VortexPalette.Magenta) {
+                    open = false
+                    onClearAll()
+                }
             }
         }
     }

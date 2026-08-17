@@ -133,7 +133,16 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     fun consumeMessage() { _message.value = null }
 
     fun setDestination(uri: Uri) {
-        viewModelScope.launch { DestinationStore.set(getApplication(), uri) }
+        viewModelScope.launch {
+            // Si Android no cede el permiso permanente, la carpeta no se guarda: aceptarla
+            // dejaría a la app creyéndose dueña de un destino donde no puede escribir, y el
+            // fallo no saldría hasta que una descarga terminara sin dejar nada.
+            _message.value = if (DestinationStore.set(getApplication(), uri)) {
+                "Destino actualizado"
+            } else {
+                "Android no dio permiso permanente sobre esa carpeta. Elige otra."
+            }
+        }
     }
 
     fun useDefaultDestination() {

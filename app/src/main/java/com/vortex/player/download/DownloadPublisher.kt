@@ -77,7 +77,7 @@ object DownloadPublisher {
             )
         }
         if (outcome.written < files.size) {
-            Log.w(TAG, "Sólo se escribieron ${outcome.written} de ${files.size} archivos")
+            DownloadLog.record(context, "Sólo se escribieron ${outcome.written} de ${files.size} archivos")
         }
 
         workspace.deleteRecursively()
@@ -177,7 +177,7 @@ object DownloadPublisher {
                 val next = target?.findFile(segment)?.takeIf { it.isDirectory }
                     ?: target?.createDirectory(segment)
                 if (next == null) {
-                    Log.w(TAG, "No se pudo crear la carpeta «$segment» en el destino")
+                    DownloadLog.record(context, "No se pudo crear la carpeta «$segment» en el destino")
                     target = null
                     break
                 }
@@ -194,7 +194,7 @@ object DownloadPublisher {
                 stream.use { out -> file.inputStream().use { it.copyTo(out) } }
                 written++
             }.onFailure {
-                Log.w(TAG, "No se pudo escribir «${file.name}» en el destino", it)
+                DownloadLog.record(context, "No se pudo escribir «${file.name}» en el destino", it)
             }
         }
         return CopyOutcome(root.name ?: "Carpeta elegida", written)
@@ -263,7 +263,7 @@ object DownloadPublisher {
                 )
                 written++
             }.onFailure {
-                Log.w(TAG, "No se pudo publicar «${file.name}» en la mediateca", it)
+                DownloadLog.record(context, "No se pudo publicar «${file.name}» en la mediateca", it)
             }
         }
         return CopyOutcome(relativePath, written)

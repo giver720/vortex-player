@@ -120,6 +120,12 @@ class DownloadService : Service() {
         val playlistItems = mutableListOf<String>()
 
         try {
+            // Comprobar el destino antes de gastar ancho de banda. Fallar aquí cuesta dos
+            // segundos; fallar al final cuesta la descarga entera y no deja ni el fichero.
+            DestinationStore.verify(this, DestinationStore.observe(this).first())?.let { why ->
+                throw IllegalStateException(why)
+            }
+
             val spotify = SpotifyJobs.readTags(job.tagsJson)
 
             // Una canción de Spotify ya viene con título y artista del catálogo, así que
@@ -282,6 +288,9 @@ class DownloadService : Service() {
             MediaRepository.get(this).refresh()
         } catch (e: Exception) {
             val cancelled = cancelledJobs.remove(job.id)
+            if (!cancelled) {
+                DownloadLog.record(this, "Falló «${job.title.ifBlank { job.url }}»", e)
+            }
             repository.update(
                 job.copy(
                     status = if (cancelled) DownloadStatus.CANCELLED else DownloadStatus.FAILED,

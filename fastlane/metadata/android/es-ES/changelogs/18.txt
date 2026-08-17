@@ -1,0 +1,9 @@
+Las descargas dejan de fallar en silencio.
+
+• Comprobación del destino antes de descargar. Vórtex crea y borra un archivo de prueba en la carpeta elegida antes de gastar ancho de banda. Si no puede escribir, lo dice en dos segundos en vez de al terminar una descarga de doscientos megas que no deja nada.
+
+• Elegir carpeta ahora falla en el momento si Android no cede el permiso permanente. Antes ese fallo se ignoraba y la carpeta se guardaba igual: la app se quedaba creyéndose dueña de un destino donde no podía escribir, y no se notaba hasta que los archivos no aparecían. Esta era la causa más probable de las descargas que terminaban sin dejar rastro.
+
+• Nuevo registro de incidencias, en el menú de la cola. Lo que falle al descargar o al guardar queda anotado con su motivo, y se puede compartir desde el propio móvil. Hasta ahora todo eso iba a un registro del sistema que exige cable y ordenador, así que en la práctica cada fallo había que reproducirlo a ciegas.
+
+• El menú de la cola está siempre disponible, también con la cola vacía: si no, el registro quedaba inalcanzable justo después de vaciarla.

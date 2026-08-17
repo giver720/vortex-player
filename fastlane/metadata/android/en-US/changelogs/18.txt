@@ -1,0 +1,9 @@
+Downloads stop failing silently.
+
+• The destination is checked before downloading. Vórtex creates and deletes a probe file in the chosen folder before spending any bandwidth. If it can't write, it says so in two seconds instead of after a 200 MB download that leaves nothing behind.
+
+• Picking a folder now fails immediately if Android won't grant permanent permission. That failure used to be ignored and the folder saved anyway: the app believed it owned a destination it couldn't write to, and you only found out when files never appeared. This was the most likely cause of downloads finishing without a trace.
+
+• New incident log, in the queue menu. Anything that fails while downloading or saving is recorded with its reason, and can be shared straight from the phone. Until now all of that went to a system log requiring a cable and a computer, so in practice every failure had to be reproduced blind.
+
+• The queue menu is always available, including with an empty queue: otherwise the log became unreachable right after clearing it.
