@@ -101,6 +101,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         update { it.copy(compressor = amount, compressorOn = amount > 0f) }
     fun toggleCompressor() = update { it.copy(compressorOn = !it.compressorOn) }
 
+    fun toggleLimiter() = update { it.copy(limiterOn = !it.limiterOn) }
+
     fun reset() {
         viewModelScope.launch {
             AudioPreferences.save(

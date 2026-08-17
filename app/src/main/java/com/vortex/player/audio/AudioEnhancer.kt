@@ -253,9 +253,11 @@ class AudioEnhancer {
             }
             dp.setInputGainAllChannelsTo(boost)
 
+            // Apagarlo es decisión del usuario: devuelve los transitorios intactos a
+            // cambio de que, si la señal se va de rango, recorte el conversor.
             for (channel in 0 until channelCount) {
                 val limiter = dp.getLimiterByChannelIndex(channel)
-                limiter.isEnabled = true
+                limiter.isEnabled = settings.limiterOn
                 limiter.threshold = -1f
                 limiter.ratio = 20f
                 limiter.attackTime = 1f

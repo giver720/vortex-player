@@ -1,0 +1,9 @@
+The limiter can now be switched off, and there are six new music presets.
+
+• Switchable limiter. It used to be announced without being touchable. It flattens peaks, and on well-recorded material that takes the attack off cymbals and percussion: anyone who wants transients intact can now have them. It stays on by default, so leaving it alone changes nothing.
+
+• This ties into the next item: a bass-heavy preset with the limiter on reads as "compressed", not as "more bass". Being able to switch it off is exactly what makes strong curves actually noticeable.
+
+• Six music presets: Rock, Pop, Electronic, Urban, Acoustic and Classical. They are deliberately more pronounced than the content ones, because a preset you can't tell apart from flat is useless. Acoustic and Classical are the deliberate exception: exaggerating them would betray material that lives on its dynamic range.
+
+• The preset list is reordered: music first, then tone shapes (bass, treble, smile, vocal, night), then content (cinema, TV, gaming, podcast). They were buried at the end of a row of fifteen. Whichever preset you had selected stays selected.

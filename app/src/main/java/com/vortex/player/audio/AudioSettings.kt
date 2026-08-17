@@ -27,20 +27,38 @@ const val EQ_MAX_DB = 12f
 /** Ajuste preparado del ecualizador. */
 enum class EqPreset(val label: String, val gains: List<Float>) {
     FLAT("PLANO", List(10) { 0f }),
+
+    // Música primero: es lo que más se escucha y lo que antes se quería probar. Van más
+    // marcados que los de contenido a propósito, porque un preset que no se distingue del
+    // plano no sirve de nada; para el retoque fino ya está la curva.
+    /** Pegada abajo, medios algo hundidos y presencia arriba: la firma del rock. */
+    ROCK("ROCK", listOf(5f, 4f, 2f, -1f, -1.5f, 0f, 2.5f, 4f, 4.5f, 3f)),
+    /** Voz al frente sobre una sonrisa suave. */
+    POP("POP", listOf(-1f, 1f, 3f, 2f, -0.5f, -1f, 1.5f, 3.5f, 4f, 3f)),
+    /** Sub-graves de verdad y brillo cristalino, con los medios apartados. */
+    ELECTRONIC("ELECTRÓNICA", listOf(7f, 6f, 3f, 0f, -2f, -1f, 1f, 3f, 5f, 6f)),
+    /** El bombo y el 808 mandan; la voz se mantiene por encima sin estridencias. */
+    URBAN("URBANO", listOf(8f, 6.5f, 3f, 1f, -1f, -1.5f, 0.5f, 2f, 3f, 2f)),
+    /** Cuerpo de madera y aire, sin colorear los medios donde vive la voz. */
+    ACOUSTIC("ACÚSTICO", listOf(2f, 1.5f, 0f, 0.5f, 1.5f, 2f, 2f, 1.5f, 2f, 2.5f)),
+    /** U muy suave: respeta el rango dinámico, que es de lo que vive una orquesta. */
+    CLASSICAL("CLÁSICA", listOf(3f, 2.5f, 1f, 0f, 0f, 0f, 0.5f, 1.5f, 2.5f, 3f)),
+
+    // Formas de tono, para cuando se busca un color concreto y no un género.
     BASS("GRAVES", listOf(7f, 6f, 4.5f, 2.5f, 0f, 0f, 0f, 0f, 1f, 2f)),
-    VOCAL("VOZ", listOf(-2f, -1.5f, 0f, 1.5f, 3.5f, 4f, 3f, 1.5f, 0f, -1f)),
     TREBLE("AGUDOS", listOf(-1f, -1f, 0f, 0f, 0f, 1f, 2.5f, 4f, 5.5f, 6f)),
     SMILE("SONRISA", listOf(6f, 5f, 3f, 0f, -2f, -2f, 0f, 3f, 5f, 6f)),
-    PODCAST("PODCAST", listOf(-6f, -4f, -1f, 2f, 4f, 4.5f, 3.5f, 2f, 0f, -2f)),
+    VOCAL("VOZ", listOf(-2f, -1.5f, 0f, 1.5f, 3.5f, 4f, 3f, 1.5f, 0f, -1f)),
     NIGHT("NOCHE", listOf(2f, 1.5f, 1f, 1.5f, 2.5f, 2.5f, 2f, 1f, 0.5f, 0f)),
 
-    // Los tres siguientes son puro reparto de ganancias, sin efectos nuevos de por medio.
+    // Contenido que no es música. Puro reparto de ganancias, sin efectos de por medio.
     /** Diálogo por encima de la banda sonora, con algo de peso en los golpes graves. */
     CINEMA("CINE", listOf(4f, 3f, 1f, -0.5f, 1.5f, 3f, 3f, 1.5f, 1f, 2f)),
     /** Altavoces pequeños: se quita el retumbe que no reproducen y se despeja la voz. */
     TV("TV", listOf(-4f, -2f, 0f, 1f, 3f, 3.5f, 2.5f, 1f, 0f, -1f)),
     /** Pasos y disparos audibles sin que los agudos cansen en sesiones largas. */
-    GAMING("JUEGOS", listOf(3f, 2f, 0f, -1f, 0f, 2f, 4f, 4.5f, 3f, 1f))
+    GAMING("JUEGOS", listOf(3f, 2f, 0f, -1f, 0f, 2f, 4f, 4.5f, 3f, 1f)),
+    PODCAST("PODCAST", listOf(-6f, -4f, -1f, 2f, 4f, 4.5f, 3.5f, 2f, 0f, -2f))
 }
 
 /** A qué audio se aplica el procesado. */
@@ -95,7 +113,17 @@ data class AudioSettings(
      * moleste. Es lo que hace que una grabación pobre suene "llena" sin subir el volumen.
      */
     val compressor: Float = 0f,
-    val compressorOn: Boolean = false
+    val compressorOn: Boolean = false,
+
+    /**
+     * Limitador. Se puede apagar, pero por defecto va puesto.
+     *
+     * Es lo que recorta los picos cuando el ecualizador o el volumen extra levantan la
+     * señal por encima de cero. Apagarlo devuelve los transitorios intactos —los platillos
+     * y las percusiones dejan de sonar apelmazados— a cambio de que, si se va de rango,
+     * recorte el propio conversor y eso sí distorsiona de verdad.
+     */
+    val limiterOn: Boolean = true
 ) {
     val effectiveBands: List<Float>
         get() = preset?.gains ?: bands
@@ -139,6 +167,7 @@ object AudioPreferences {
     private fun compressorKey(o: AudioOutput?) = stringPreferencesKey("compressor${suffix(o)}")
     private fun compressorOnKey(o: AudioOutput?) =
         booleanPreferencesKey("compressor_on${suffix(o)}")
+    private fun limiterOnKey(o: AudioOutput?) = booleanPreferencesKey("limiter_on${suffix(o)}")
 
     /** Global, no por salida: decide si el resto de claves llevan sufijo. */
     private val PER_OUTPUT = booleanPreferencesKey("per_output_profiles")
@@ -182,7 +211,9 @@ object AudioPreferences {
                 boostDb = prefs[boostKey(output)]?.toFloatOrNull() ?: 0f,
                 boostOn = prefs[boostOnKey(output)] ?: false,
                 compressor = prefs[compressorKey(output)]?.toFloatOrNull() ?: 0f,
-                compressorOn = prefs[compressorOnKey(output)] ?: false
+                compressorOn = prefs[compressorOnKey(output)] ?: false,
+                // Por defecto puesto: quien no lo toque sigue protegido como hasta ahora.
+                limiterOn = prefs[limiterOnKey(output)] ?: true
             )
         }
 
@@ -205,6 +236,7 @@ object AudioPreferences {
             prefs[boostOnKey(output)] = settings.boostOn
             prefs[compressorKey(output)] = settings.compressor.toString()
             prefs[compressorOnKey(output)] = settings.compressorOn
+            prefs[limiterOnKey(output)] = settings.limiterOn
         }
     }
 }

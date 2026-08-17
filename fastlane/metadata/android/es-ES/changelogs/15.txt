@@ -1,0 +1,9 @@
+El limitador ya se puede apagar, y hay seis presets nuevos de música.
+
+• Limitador apagable. Antes se informaba de él sin poder tocarlo. Aplasta los picos, y con material bien grabado eso se lleva por delante el ataque de platillos y percusiones: quien quiera los transitorios intactos ahora puede tenerlos. Sigue puesto por defecto, así que si no lo tocas todo queda igual.
+
+• Y va enlazado con lo siguiente: un preset cargado de graves con el limitador puesto se percibe como "comprimido", no como "más graves". Poder apagarlo es justo lo que hace que las curvas fuertes se noten de verdad.
+
+• Seis presets de música: Rock, Pop, Electrónica, Urbano, Acústico y Clásica. Van deliberadamente más marcados que los de contenido, porque un preset que no se distingue del plano no sirve de nada. Acústico y Clásica son la excepción a propósito: exagerarlos traicionaría el material, que vive de su rango dinámico.
+
+• La lista de presets se reordena: música primero, luego formas de tono (graves, agudos, sonrisa, voz, noche) y al final contenido (cine, TV, juegos, podcast). Estaban al fondo de una fila de quince y no se encontraban. El preset que tuvieras elegido no cambia.

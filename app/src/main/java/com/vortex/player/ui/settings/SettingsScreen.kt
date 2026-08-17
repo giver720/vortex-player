@@ -126,7 +126,7 @@ fun SettingsScreen(
             }
 
             if (caps.advanced) {
-                item { LimiterBadge(settings) }
+                item { LimiterToggle(settings, active, viewModel::toggleLimiter) }
             } else {
                 item {
                     Notice(
@@ -181,9 +181,12 @@ fun SettingsScreen(
                 item {
                     EffectSlider(
                         title = "VOLUMEN EXTRA",
-                        hint = if (caps.advanced) {
+                        hint = if (caps.advanced && settings.limiterOn) {
                             "Sube por encima del máximo del sistema. El limitador recorta " +
                                 "los picos por ti, así que gana potencia sin distorsionar."
+                        } else if (caps.advanced) {
+                            "Sube por encima del máximo del sistema. Con el limitador " +
+                                "apagado no hay red: pasarse de aquí recorta y distorsiona."
                         } else {
                             "Sube por encima del máximo del sistema. Sin limitador, pasarse " +
                                 "distorsiona."
@@ -456,28 +459,74 @@ private fun OutputProfileSelector(
     }
 }
 
-/** El limitador no se puede apagar, así que se informa de él en vez de ofrecerlo. */
+/**
+ * Limitador, ahora opcional.
+ *
+ * Antes se informaba de él sin poder apagarlo. Tiene sentido poder: aplasta los picos, y
+ * con material bien grabado y el volumen en su sitio eso se lleva por delante el ataque de
+ * platillos y percusiones. Quien quiera los transitorios intactos debe poder tenerlos.
+ *
+ * Va puesto por defecto y el aviso de apagarlo es deliberadamente concreto: sin limitador,
+ * el volumen extra y las curvas cargadas de graves recortan en el conversor, y eso suena a
+ * chasquido, no a "más fuerte".
+ */
 @Composable
-private fun LimiterBadge(settings: AudioSettings) {
-    Row(
+private fun LimiterToggle(
+    settings: AudioSettings,
+    enabled: Boolean,
+    onToggle: () -> Unit
+) {
+    val on = settings.limiterOn
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 4.dp)
             .background(VortexPalette.GraphiteHigh, VortexShapes.small)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+            .padding(horizontal = 12.dp, vertical = 9.dp)
     ) {
-        Icon(
-            Icons.Filled.Shield,
-            contentDescription = null,
-            tint = if (settings.enabled) VortexPalette.Cyan else VortexPalette.TextLow,
-            modifier = Modifier.size(16.dp)
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Icon(
+                Icons.Filled.Shield,
+                contentDescription = null,
+                tint = when {
+                    !enabled -> VortexPalette.TextLow
+                    on -> VortexPalette.Cyan
+                    else -> VortexPalette.Amber
+                },
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "LIMITADOR",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (enabled) VortexPalette.TextHigh else VortexPalette.TextLow,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = on,
+                onCheckedChange = { if (enabled) onToggle() },
+                enabled = enabled,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = VortexPalette.Graphite,
+                    checkedTrackColor = VortexPalette.Neon,
+                    uncheckedThumbColor = VortexPalette.TextLow,
+                    uncheckedTrackColor = VortexPalette.GraphiteHigh
+                )
+            )
+        }
         Text(
-            text = "Limitador activo: impide que los picos recorten al amplificar.",
+            text = if (on) {
+                "Impide que los picos recorten al amplificar. Apágalo si prefieres los " +
+                    "transitorios intactos y no vas a forzar el volumen."
+            } else {
+                "Apagado. Los golpes conservan toda su pegada, pero el volumen extra y las " +
+                    "curvas cargadas de graves pueden recortar y sonar a chasquido."
+            },
             style = MaterialTheme.typography.bodySmall,
-            color = VortexPalette.TextMid
+            color = if (on) VortexPalette.TextMid else VortexPalette.Amber,
+            modifier = Modifier.padding(top = 6.dp)
         )
     }
 }
