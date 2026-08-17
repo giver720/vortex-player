@@ -109,6 +109,8 @@ fun DownloadsScreen(
     val bitrate by viewModel.bitrate.collectAsStateWithLifecycle()
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val subtitles by viewModel.embedSubtitles.collectAsStateWithLifecycle()
+    val thumbnail by viewModel.embedThumbnail.collectAsStateWithLifecycle()
+    val metadata by viewModel.embedMetadata.collectAsStateWithLifecycle()
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
     val activeJobId by viewModel.activeJobId.collectAsStateWithLifecycle()
@@ -153,7 +155,7 @@ fun DownloadsScreen(
     val finished = remember(downloads) { downloads.filter { it.status.isTerminal } }
     val visible = if (showDone) finished else pending
 
-    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, sponsorSettings) {
+    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, thumbnail, metadata, sponsorSettings) {
         buildList {
             add(kind.label)
             if (kind == DownloadKind.VIDEO) {
@@ -164,6 +166,8 @@ fun DownloadsScreen(
             }
             if (playlist) add("LISTA")
             if (subtitles && kind == DownloadKind.VIDEO) add("SUBS")
+            if (thumbnail) add("CARÁTULA")
+            if (metadata) add("META")
             if (sponsorSettings.isActive) add("SPONSOR")
         }.joinToString(" · ")
     }
@@ -333,6 +337,26 @@ fun DownloadsScreen(
                                 onClick = viewModel::toggleSubtitles
                             )
                         }
+                        Chip(
+                            label = "CARÁTULA",
+                            selected = thumbnail,
+                            onClick = viewModel::toggleThumbnail
+                        )
+                        Chip(
+                            label = "METADATOS",
+                            selected = metadata,
+                            onClick = viewModel::toggleMetadata
+                        )
+                    }
+                    if (thumbnail || metadata || subtitles) {
+                        Text(
+                            text = "Cada extra añade un paso de conversión al terminar cada " +
+                                "pista, y con él una forma más de que falle. Si una lista se " +
+                                "descarga incompleta, apágalos y vuelve a probar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VortexPalette.Amber,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
                     }
                     if (playlist) {
                         Text(

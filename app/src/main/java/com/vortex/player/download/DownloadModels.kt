@@ -103,9 +103,18 @@ data class DownloadRequest(
      * carpeta en el destino. Desactivarlo baja sólo el vídeo concreto del enlace.
      */
     val playlist: Boolean = true,
-    val embedThumbnail: Boolean = true,
+    /**
+     * Extras de postprocesado, apagados por defecto.
+     *
+     * Cada uno es un paso más de ffmpeg después de la descarga, y por tanto un sitio más
+     * donde fallar. La incrustación de carátula en concreto venía activada sin manera de
+     * apagarla, y en dispositivos cuyo ffmpeg no digiere el webp de YouTube se llevaba por
+     * delante pistas enteras de una lista. Descargar tiene que funcionar a la primera; lo
+     * demás se añade a conciencia, sabiendo lo que se arriesga.
+     */
+    val embedThumbnail: Boolean = false,
     val embedSubtitles: Boolean = false,
-    val embedMetadata: Boolean = true,
+    val embedMetadata: Boolean = false,
     val sponsor: SponsorSettings = SponsorSettings()
 )
 

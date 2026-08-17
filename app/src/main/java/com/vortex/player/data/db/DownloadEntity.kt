@@ -28,9 +28,9 @@ data class DownloadEntity(
     val audioCodec: AudioCodec = AudioCodec.MP3,
     val audioBitrate: AudioBitrate = AudioBitrate.BEST,
     val playlist: Boolean = true,
-    val embedThumbnail: Boolean = true,
+    val embedThumbnail: Boolean = false,
     val embedSubtitles: Boolean = false,
-    val embedMetadata: Boolean = true,
+    val embedMetadata: Boolean = false,
 
     /**
      * Política de SponsorBlock con la que se lanzó el trabajo. Se guarda en la fila y no

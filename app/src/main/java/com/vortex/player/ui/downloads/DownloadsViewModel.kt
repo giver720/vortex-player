@@ -72,6 +72,16 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     private val _embedSubtitles = MutableStateFlow(false)
     val embedSubtitles: StateFlow<Boolean> = _embedSubtitles.asStateFlow()
 
+    /**
+     * Extras de postprocesado. Apagados de salida: cada uno añade un paso de ffmpeg tras
+     * la descarga, y con ello una forma más de que una pista se pierda.
+     */
+    private val _embedThumbnail = MutableStateFlow(false)
+    val embedThumbnail: StateFlow<Boolean> = _embedThumbnail.asStateFlow()
+
+    private val _embedMetadata = MutableStateFlow(false)
+    val embedMetadata: StateFlow<Boolean> = _embedMetadata.asStateFlow()
+
     val sponsor: StateFlow<SponsorSettings> = EnginePreferences.sponsorSettings(app)
         .stateIn(viewModelScope, SharingStarted.Eagerly, SponsorSettings())
 
@@ -150,6 +160,8 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     fun setBitrate(value: AudioBitrate) { _bitrate.value = value }
     fun togglePlaylist() { _playlist.value = !_playlist.value }
     fun toggleSubtitles() { _embedSubtitles.value = !_embedSubtitles.value }
+    fun toggleThumbnail() { _embedThumbnail.value = !_embedThumbnail.value }
+    fun toggleMetadata() { _embedMetadata.value = !_embedMetadata.value }
     fun consumeMessage() { _message.value = null }
 
     fun setDestination(uri: Uri) {
@@ -212,6 +224,8 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                     audioBitrate = _bitrate.value,
                     playlist = _playlist.value,
                     embedSubtitles = _embedSubtitles.value,
+                    embedThumbnail = _embedThumbnail.value,
+                    embedMetadata = _embedMetadata.value,
                     sponsor = sponsor.value
                 )
             )

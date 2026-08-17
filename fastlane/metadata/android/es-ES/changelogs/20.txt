@@ -1,0 +1,11 @@
+Las descargas se reducen a lo mínimo para que funcionen a la primera.
+
+• Descargar un vídeo ahora hace sólo eso: bajarlo y unir imagen y sonido. Nada más. Cada paso extra de conversión al terminar era un sitio más donde fallar, y era lo que dejaba listas de cinco canciones con dos o tres.
+
+• La causa de fondo: incrustar la carátula y los metadatos venía activado de fábrica y NO HABÍA NINGUNA FORMA DE APAGARLO. No aparecía en ninguna pantalla. Los arreglos anteriores intentaban rescatar un paso que nunca deberías haber estado obligado a ejecutar.
+
+• Ahora CARÁTULA y METADATOS son dos opciones más, apagadas de salida, junto a SUBTÍTULOS. Al encender cualquiera se avisa de lo que implica.
+
+• Esto te deja acotar cualquier fallo por tu cuenta: si con todo apagado la lista baja entera, enciende un extra y vuelve a probar. El que la rompa es el culpable.
+
+Ojo si venías de una versión anterior: tus descargas dejarán de llevar carátula y metadatos salvo que los actives a mano. Es deliberado; que la descarga termine importa más que la miniatura.

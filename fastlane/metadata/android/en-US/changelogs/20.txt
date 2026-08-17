@@ -1,0 +1,11 @@
+Downloads are stripped back to the minimum so they work first time.
+
+• Downloading a video now does just that: fetch it and merge picture with sound. Nothing else. Every extra conversion step at the end was one more place to fail, and it was what left five-song playlists with two or three.
+
+• The underlying cause: embedding cover art and metadata was enabled out of the box and THERE WAS NO WAY TO TURN IT OFF. It appeared on no screen at all. Previous fixes were trying to rescue a step you should never have been forced to run.
+
+• COVER ART and METADATA are now two more options, off by default, alongside SUBTITLES. Turning either on tells you what it costs.
+
+• This lets you narrow down any failure yourself: if the playlist downloads in full with everything off, switch one extra on and try again. Whichever breaks it is the culprit.
+
+Note if you're upgrading: your downloads will no longer carry cover art or metadata unless you enable them by hand. That's deliberate — the download finishing matters more than the thumbnail.
