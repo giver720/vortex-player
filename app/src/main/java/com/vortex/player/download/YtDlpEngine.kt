@@ -162,16 +162,17 @@ object YtDlpEngine {
                     request.audioBitrate.value?.let { addOption("--audio-quality", it) }
                 }
                 DownloadKind.VIDEO -> {
-                    addOption("-f", request.videoQuality.formatSelector())
-                    // Remuxar (no recodificar) a MP4 mantiene la calidad intacta y es
-                    // casi instantáneo; recodificar tardaría más que la propia descarga.
-                    addOption("--merge-output-format", "mp4")
-                    // `--merge-output-format` sólo interviene cuando hay dos pistas que
-                    // unir. Si la fuente entrega un único fichero ya mezclado —lo normal
-                    // fuera de YouTube, y el último recurso del selector— no se mezcla
-                    // nada y el webm llegaba intacto al destino. Esto lo reenvasa, también
-                    // sin recodificar, y no toca lo que ya venga en mp4.
-                    addOption("--remux-video", "mp4")
+                    addOption("-f", request.videoQuality.formatSelector(request.videoContainer))
+                    request.videoContainer.ytdlpName?.let { container ->
+                        // Remuxar (no recodificar) mantiene la calidad intacta y es casi
+                        // instantáneo; recodificar tardaría más que la propia descarga.
+                        addOption("--merge-output-format", container)
+                        // `--merge-output-format` sólo interviene cuando hay dos pistas que
+                        // unir. Si la fuente entrega un único fichero ya mezclado no se
+                        // mezcla nada y el envase llegaba intacto al destino; esto lo
+                        // reenvasa, también sin recodificar, y no toca lo que ya venga bien.
+                        addOption("--remux-video", container)
+                    }
                 }
             }
 

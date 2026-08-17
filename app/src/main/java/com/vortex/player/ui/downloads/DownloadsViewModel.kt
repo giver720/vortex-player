@@ -16,6 +16,7 @@ import com.vortex.player.download.EnginePreferences
 import com.vortex.player.download.SponsorCategory
 import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.SponsorSettings
+import com.vortex.player.download.VideoContainer
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.download.YtDlpEngine
 import com.vortex.player.data.MediaRepository
@@ -52,6 +53,10 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _quality = MutableStateFlow(VideoQuality.BEST)
     val quality: StateFlow<VideoQuality> = _quality.asStateFlow()
+
+    /** Envase del vídeo. MP4 de salida: es el que reproduce cualquier cosa. */
+    private val _container = MutableStateFlow(VideoContainer.MP4)
+    val container: StateFlow<VideoContainer> = _container.asStateFlow()
 
     private val _codec = MutableStateFlow(AudioCodec.MP3)
     val codec: StateFlow<AudioCodec> = _codec.asStateFlow()
@@ -119,6 +124,8 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setKind(value: DownloadKind) { _kind.value = value }
     fun setQuality(value: VideoQuality) { _quality.value = value }
+
+    fun setContainer(value: VideoContainer) { _container.value = value }
     fun setCodec(value: AudioCodec) { _codec.value = value }
     fun setBitrate(value: AudioBitrate) { _bitrate.value = value }
     fun togglePlaylist() { _playlist.value = !_playlist.value }
@@ -171,6 +178,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                     url = link,
                     kind = _kind.value,
                     videoQuality = _quality.value,
+                    videoContainer = _container.value,
                     audioCodec = _codec.value,
                     audioBitrate = _bitrate.value,
                     playlist = _playlist.value,

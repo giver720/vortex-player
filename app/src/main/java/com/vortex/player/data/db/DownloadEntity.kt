@@ -7,6 +7,7 @@ import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadStatus
 import com.vortex.player.download.SponsorMode
+import com.vortex.player.download.VideoContainer
 import com.vortex.player.download.VideoQuality
 
 /**
@@ -23,6 +24,7 @@ data class DownloadEntity(
 
     val kind: DownloadKind = DownloadKind.VIDEO,
     val videoQuality: VideoQuality = VideoQuality.BEST,
+    val videoContainer: VideoContainer = VideoContainer.MP4,
     val audioCodec: AudioCodec = AudioCodec.MP3,
     val audioBitrate: AudioBitrate = AudioBitrate.BEST,
     val playlist: Boolean = true,

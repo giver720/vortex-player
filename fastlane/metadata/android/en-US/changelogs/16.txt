@@ -1,0 +1,9 @@
+No more .webp files in your downloads folder, and you can now pick the format.
+
+• Fixed: downloads left .webp images next to the videos. It wasn't the video encoded wrong — they were the thumbnails. Vórtex embeds cover art in every download, and to do that yt-dlp fetches the image as a separate file it only deletes once embedding succeeds. Putting a YouTube webp inside an MP4 requires converting it first, and when that conversion fails the image is left behind. Publishing then copied everything it found, thumbnails included.
+
+• Only the media is published now. Thumbnails, loose subtitles, half-finished downloads and yt-dlp leftovers are all skipped. And if a download leaves nothing but thumbnails, it fails with a clear message instead of passing off a folder of images as success.
+
+• New FILE FORMAT section next to quality: MP4, MKV, WEBM or ORIGINAL, defaulting to MP4 because it plays everywhere.
+
+• The chosen format also changes which audio track is requested, which is what makes it actually work: AAC doesn't fit in a WebM nor Opus in an MP4 without a fight, and when that happened yt-dlp gave up on the requested format and returned another. Choosing MP4 does not lower video quality: at 4K the picture is kept and only the audio is constrained.

@@ -21,21 +21,56 @@ enum class VideoQuality(val label: String, private val maxHeight: Int?) {
     LOW("360p", 360);
 
     /**
-     * El audio se pide en m4a (AAC) antes que "el mejor", que en YouTube es opus dentro de
-     * webm. No es que el opus no quepa en mp4 —ffmpeg lo admite—, sino que AAC en mp4 es la
-     * pareja que reproduce cualquier cosa, incluidas las apps a las que el usuario lleve
-     * después el fichero. Cambia el envase, no la calidad: no se recodifica nada.
+     * Selector de yt-dlp para la altura pedida, adaptado al contenedor.
      *
-     * Al vídeo, en cambio, no se le exige mp4 a propósito. Por encima de 1080p YouTube
-     * sólo publica VP9 y AV1, de modo que filtrar por extensión haría que "el mejor mp4
-     * de hasta 2160p" fuera en realidad el H.264 de 1080p, y pedir 4K devolvería 1080p sin
-     * decir nada. VP9 y AV1 caben en mp4 tal cual.
+     * La pista de audio se pide compatible con el envase de entrada ([VideoContainer.
+     * preferredAudio]): el AAC no entra en webm ni el Opus en mp4 sin pelearse con ffmpeg,
+     * y cuando eso pasaba yt-dlp renunciaba al contenedor pedido y devolvía otro.
+     *
+     * Al vídeo, en cambio, no se le exige extensión a propósito. Por encima de 1080p
+     * YouTube sólo publica VP9 y AV1, de modo que filtrar por extensión haría que "el mejor
+     * mp4 de hasta 2160p" fuera en realidad el H.264 de 1080p, y pedir 4K devolvería 1080p
+     * sin decir nada.
      */
-    fun formatSelector(): String {
+    fun formatSelector(container: VideoContainer = VideoContainer.MP4): String {
         val cap = maxHeight?.let { "[height<=$it]" } ?: ""
-        return "bestvideo$cap+bestaudio[ext=m4a]/bestvideo$cap+bestaudio/" +
-            "best$cap[ext=mp4]/best$cap/best"
+        val preferred = container.preferredAudio
+        return buildString {
+            if (preferred != null) append("bestvideo$cap+$preferred/")
+            append("bestvideo$cap+bestaudio/")
+            container.ytdlpName?.let { append("best$cap[ext=$it]/") }
+            append("best$cap/best")
+        }
     }
+}
+
+/**
+ * Contenedor del vídeo final.
+ *
+ * MP4 por defecto porque es el único que reproduce cualquier cosa: galería de Android,
+ * WhatsApp, televisores, editores. MKV se ofrece porque acepta cualquier códec sin
+ * reconvertir, que es lo que hace falta cuando la fuente trae AV1 u Opus y no se quiere
+ * perder calidad. ORIGINAL deja lo que venga, sin reenvasar nada.
+ */
+enum class VideoContainer(val label: String, val ytdlpName: String?) {
+    MP4("MP4", "mp4"),
+    MKV("MKV", "mkv"),
+    WEBM("WEBM", "webm"),
+    ORIGINAL("ORIGINAL", null);
+
+    /**
+     * Preferencia de pista de audio para este contenedor.
+     *
+     * No es un capricho: el AAC no entra en un webm ni el Opus en un mp4 sin que ffmpeg
+     * proteste. Pedir de entrada la pista compatible evita que yt-dlp renuncie al
+     * contenedor pedido y devuelva otro.
+     */
+    val preferredAudio: String?
+        get() = when (this) {
+            MP4 -> "bestaudio[ext=m4a]"
+            WEBM -> "bestaudio[ext=webm]"
+            MKV, ORIGINAL -> null
+        }
 }
 
 enum class AudioCodec(val label: String, val ytdlpName: String, val extension: String) {
@@ -59,6 +94,8 @@ data class DownloadRequest(
     val url: String,
     val kind: DownloadKind = DownloadKind.VIDEO,
     val videoQuality: VideoQuality = VideoQuality.BEST,
+    /** Envase del vídeo final. MP4 por defecto: es el que reproduce cualquier cosa. */
+    val videoContainer: VideoContainer = VideoContainer.MP4,
     val audioCodec: AudioCodec = AudioCodec.MP3,
     val audioBitrate: AudioBitrate = AudioBitrate.BEST,
     /**

@@ -39,8 +39,18 @@ object DownloadPublisher {
     ): PublishResult = withContext(Dispatchers.IO) {
         undoPlaceholderFolder(workspace)
 
-        val files = workspace.walkTopDown().filter { it.isFile }.toList()
-        if (files.isEmpty()) return@withContext PublishResult("—", 0, null)
+        val produced = workspace.walkTopDown().filter { it.isFile && it.length() > 0 }.toList()
+        if (produced.isEmpty()) return@withContext PublishResult("—", 0, null)
+
+        // Sólo se publica el medio. yt-dlp deja al lado ficheros de apoyo, y publicarlos
+        // llenaba la carpeta de destino de miniaturas `.webp` junto a cada vídeo.
+        val files = produced.filterNot { it.isSidecar() }
+        if (files.isEmpty()) {
+            throw IllegalStateException(
+                "La descarga sólo dejó miniaturas y archivos auxiliares, ningún medio. " +
+                    "Suele significar que la conversión final falló."
+            )
+        }
 
         // Si a estas alturas queda una subcarpeta, era una lista de verdad: ese nombre se
         // conserva al destino.
@@ -76,6 +86,30 @@ object DownloadPublisher {
 
     /** Dónde acabó todo y cuántos ficheros se escribieron de verdad. */
     private data class CopyOutcome(val location: String, val written: Int)
+
+    /**
+     * Ficheros que yt-dlp deja junto al medio y que no son la descarga.
+     *
+     * El caso que motivó esto son las miniaturas: `--embed-thumbnail` baja la imagen a un
+     * fichero aparte y sólo la borra si consigue incrustarla. Meter un `.webp` de YouTube
+     * dentro de un mp4 exige convertirlo antes, y cuando esa conversión falla la imagen se
+     * queda en la zona de trabajo. Como aquí se publicaba todo lo que hubiera, la carpeta
+     * de destino acababa con un `.webp` al lado de cada vídeo.
+     *
+     * Se filtra por lo que sabemos que sobra, y no por una lista de formatos de vídeo
+     * permitidos, para no tirar una descarga legítima que acabe en un contenedor que no
+     * hubiéramos previsto.
+     */
+    private val SIDECAR_EXTENSIONS = setOf(
+        // Miniaturas.
+        "webp", "jpg", "jpeg", "png", "gif", "bmp",
+        // Subtítulos sueltos cuando se han pedido incrustados.
+        "vtt", "srt", "ass", "ssa", "lrc", "ttml", "sbv",
+        // Restos del propio yt-dlp y descargas a medias.
+        "part", "ytdl", "temp", "tmp", "json", "description", "annotations", "mpd", "m3u8"
+    )
+
+    private fun File.isSidecar(): Boolean = extension.lowercase() in SIDECAR_EXTENSIONS
 
     /**
      * Deshace la carpeta señuelo que yt-dlp crea cuando el enlace no era una lista.

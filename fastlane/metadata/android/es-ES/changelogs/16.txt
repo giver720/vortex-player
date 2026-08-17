@@ -1,0 +1,9 @@
+Se acabaron los archivos .webp en la carpeta de descargas, y ya puedes elegir el formato.
+
+• Corregido: al descargar aparecían imágenes .webp junto a los vídeos. No era el vídeo mal codificado: eran las miniaturas. Vórtex incrusta la carátula en cada descarga, y para eso yt-dlp baja la imagen a un fichero aparte que sólo borra si consigue incrustarla. Meter un webp de YouTube dentro de un MP4 exige convertirlo antes, y cuando esa conversión falla la imagen se queda suelta. Al publicar se copiaba todo lo que hubiera, miniaturas incluidas.
+
+• Ahora sólo se publica el medio. Se descartan miniaturas, subtítulos sueltos, descargas a medias y restos del propio yt-dlp. Y si de una descarga sólo quedan miniaturas, falla con un mensaje claro en vez de dar por buena una carpeta con imágenes.
+
+• Nuevo apartado FORMATO DE ARCHIVO, junto a la calidad: MP4, MKV, WEBM u ORIGINAL, con MP4 por defecto por ser el que reproduce cualquier cosa.
+
+• El formato elegido cambia también qué pista de audio se pide, que es lo que hace que funcione de verdad: el AAC no entra en un WebM ni el Opus en un MP4 sin pelearse, y cuando eso pasaba yt-dlp renunciaba al formato pedido y devolvía otro. Elegir MP4 no baja la calidad del vídeo: en 4K se conserva la imagen y sólo se condiciona el audio.

@@ -78,6 +78,7 @@ import com.vortex.player.download.PlaylistProgress
 import com.vortex.player.download.SponsorCategory
 import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.SponsorSettings
+import com.vortex.player.download.VideoContainer
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.theme.VortexPalette
@@ -99,6 +100,7 @@ fun DownloadsScreen(
     val url by viewModel.url.collectAsStateWithLifecycle()
     val kind by viewModel.kind.collectAsStateWithLifecycle()
     val quality by viewModel.quality.collectAsStateWithLifecycle()
+    val container by viewModel.container.collectAsStateWithLifecycle()
     val codec by viewModel.codec.collectAsStateWithLifecycle()
     val bitrate by viewModel.bitrate.collectAsStateWithLifecycle()
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
@@ -142,10 +144,15 @@ fun DownloadsScreen(
     val finished = remember(downloads) { downloads.filter { it.status.isTerminal } }
     val visible = if (showDone) finished else pending
 
-    val optionsSummary = remember(kind, quality, codec, bitrate, playlist, subtitles, sponsorSettings) {
+    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, sponsorSettings) {
         buildList {
             add(kind.label)
-            if (kind == DownloadKind.VIDEO) add(quality.label) else add(codec.label)
+            if (kind == DownloadKind.VIDEO) {
+                add(container.label)
+                add(quality.label)
+            } else {
+                add(codec.label)
+            }
             if (playlist) add("LISTA")
             if (subtitles && kind == DownloadKind.VIDEO) add("SUBS")
             if (sponsorSettings.isActive) add("SPONSOR")
@@ -256,6 +263,31 @@ fun DownloadsScreen(
                         options = VideoQuality.entries.map { it.label },
                         selectedIndex = VideoQuality.entries.indexOf(quality),
                         onSelect = { viewModel.setQuality(VideoQuality.entries[it]) }
+                    )
+                    SectionLabel("FORMATO DE ARCHIVO")
+                    ChipRow(
+                        options = VideoContainer.entries.map { it.label },
+                        selectedIndex = VideoContainer.entries.indexOf(container),
+                        onSelect = { viewModel.setContainer(VideoContainer.entries[it]) }
+                    )
+                    Text(
+                        text = when (container) {
+                            VideoContainer.MP4 ->
+                                "El que reproduce cualquier cosa: galería, WhatsApp, " +
+                                    "televisores, editores. Es la opción recomendada."
+                            VideoContainer.MKV ->
+                                "Acepta cualquier códec sin reconvertir. Útil en 4K, donde " +
+                                    "el vídeo viene en AV1 o VP9, pero no todo lo reproduce."
+                            VideoContainer.WEBM ->
+                                "Formato de YouTube. Se guarda sin tocar nada, pero muchas " +
+                                    "apps y televisores no lo abren."
+                            VideoContainer.ORIGINAL ->
+                                "Se guarda tal y como venga de la fuente, sin reenvasar. " +
+                                    "Lo más rápido y lo menos predecible."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VortexPalette.TextLow,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
                 } else {
                     SectionLabel("CÓDEC")
