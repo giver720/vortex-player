@@ -1292,14 +1292,22 @@ private fun DownloadRow(
         }
 
         if (job.status == DownloadStatus.COMPLETED) {
+            // Una lista puede terminar con menos pistas de las que tenía: desde que un
+            // fallo suelto ya no aborta el resto, quedarse callado sería esconderlo.
+            val short = job.playlistCount > 1 && job.fileCount < job.playlistCount
             Text(
                 text = buildString {
-                    append("${job.fileCount} archivo${if (job.fileCount == 1) "" else "s"}")
+                    if (job.playlistCount > 1) {
+                        append("${job.fileCount} de ${job.playlistCount} pistas")
+                        if (short) append(" · algunas no se pudieron bajar")
+                    } else {
+                        append("${job.fileCount} archivo${if (job.fileCount == 1) "" else "s"}")
+                    }
                     job.playlistFolder?.let { append(" · carpeta “$it”") }
                     job.outputLocation?.let { append(" · $it") }
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = VortexPalette.TextLow,
+                color = if (short) VortexPalette.Amber else VortexPalette.TextLow,
                 modifier = Modifier.padding(top = 6.dp)
             )
         }

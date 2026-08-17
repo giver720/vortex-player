@@ -139,8 +139,10 @@ object YtDlpEngine {
                 val low = (seconds - 15).coerceAtLeast(1)
                 val high = seconds + 15
                 addOption("--match-filter", "duration > $low & duration < $high")
-                // Sin esto, un vídeo descartado por el filtro aborta la búsqueda entera.
-                addOption("--no-abort-on-error")
+                // Que un vídeo descartado por el filtro no aborte la búsqueda entera lo
+                // cubre ya el `--ignore-errors` de más abajo, que es más amplio. Poner
+                // aquí `--no-abort-on-error` sería una bandera muerta: comparten destino
+                // y ganaría la última, con lo que parecería hacer algo sin hacerlo.
                 // La búsqueda devuelve varios candidatos y todos comparten nombre de
                 // salida: sin este tope se pisarían unos a otros y acabaríamos con el
                 // quinto resultado en vez del mejor. yt-dlp termina con código 101 al
@@ -150,6 +152,14 @@ object YtDlpEngine {
             }
             addOption("--no-mtime")
             addOption("--no-warnings")
+
+            // Sin esto, un fallo de postprocesado se lleva por delante la pista entera.
+            // El valor por defecto de yt-dlp es "only_download", que sólo perdona los
+            // errores de descarga: los de postprocesado se relanzan (YoutubeDL.py, al
+            // ejecutar cada PP). Con la incrustación de miniaturas fallando —que es lo que
+            // dejaba los .webp sueltos— una lista de cinco acababa con dos o tres pistas,
+            // distintas en cada intento según qué imagen trajera cada vídeo.
+            addOption("--ignore-errors")
             addOption("-o", outputTemplate(request, destination, outputName))
 
             if (request.playlist) addOption("--yes-playlist") else addOption("--no-playlist")
@@ -178,7 +188,14 @@ object YtDlpEngine {
 
             applySponsorBlock(this, request)
 
-            if (request.embedThumbnail) addOption("--embed-thumbnail")
+            if (request.embedThumbnail) {
+                addOption("--embed-thumbnail")
+                // Ataca la causa en vez del síntoma: YouTube sirve las miniaturas en webp
+                // y meter un webp en un mp4 obliga a convertirlo sobre la marcha, que es
+                // el paso que reventaba. Convertida a jpg de antemano, la incrustación es
+                // trivial y además es el formato que espera la carátula de un mp4.
+                addOption("--convert-thumbnails", "jpg")
+            }
             if (request.embedMetadata) addOption("--embed-metadata")
             if (request.embedSubtitles && request.kind == DownloadKind.VIDEO) {
                 addOption("--write-auto-subs")

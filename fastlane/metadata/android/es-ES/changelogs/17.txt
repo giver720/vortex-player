@@ -1,0 +1,9 @@
+Las playlists ya se descargan enteras.
+
+• Una lista de cinco canciones bajaba dos, y al reintentarlo tres. No era azar: era el mismo fallo que dejaba los archivos .webp, visto por el otro lado. Vórtex incrusta la carátula en cada pista, y cuando esa incrustación fallaba, yt-dlp descartaba la pista entera en vez de quedarse sin carátula. Como cada vídeo trae su imagen, fallaban unas u otras en cada intento.
+
+• Corregida la causa: la miniatura se convierte a jpg antes de incrustarla. Meter directamente el webp de YouTube en un MP4 obliga a convertirlo sobre la marcha, y ese es el paso que reventaba; hecho de antemano, la incrustación es trivial y además el jpg es el formato que espera la carátula de un MP4.
+
+• Y blindado el efecto: aunque algo falle al terminar una pista, ahora la pista se conserva en vez de perderse.
+
+• Para que eso no esconda nada, la tarjeta de la descarga dice ahora "3 de 5 pistas · algunas no se pudieron bajar" en ámbar cuando falta alguna, en vez del genérico "N archivos". Cambiar un fallo ruidoso por uno silencioso habría sido peor.

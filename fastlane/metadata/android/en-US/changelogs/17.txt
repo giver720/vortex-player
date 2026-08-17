@@ -1,0 +1,9 @@
+Playlists now download in full.
+
+• A five-song playlist would fetch two, and three on retry. It wasn't random: it was the same bug that left the .webp files, seen from the other side. Vórtex embeds cover art in every track, and when that embedding failed, yt-dlp discarded the whole track rather than settling for no cover. Since each video carries its own image, different ones failed on each attempt.
+
+• The cause is fixed: the thumbnail is converted to jpg before embedding. Putting a YouTube webp straight into an MP4 forces a conversion mid-flight, and that is the step that broke; done up front, embedding is trivial, and jpg is the format MP4 cover art expects anyway.
+
+• And the effect is contained: if something does fail while finishing a track, the track is now kept instead of lost.
+
+• So that this hides nothing, the download card now reads "3 of 5 tracks · some couldn't be downloaded" in amber when any are missing, instead of a generic "N files". Trading a noisy failure for a silent one would have been worse.
