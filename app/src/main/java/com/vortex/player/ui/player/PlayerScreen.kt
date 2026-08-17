@@ -231,10 +231,7 @@ fun PlayerScreen(
                     shuffle = shuffle,
                     onBack = onBack,
                     onToggleLock = { locked = !locked },
-                    onPlayPause = {
-                        val p = player ?: return@ControlsOverlay
-                        if (p.isPlaying) p.pause() else p.play()
-                    },
+                    onPlayPause = { PlaybackService.togglePlayPause(context) },
                     onSeekTo = { fraction ->
                         val p = player ?: return@ControlsOverlay
                         if (uiState.durationMs > 0) {

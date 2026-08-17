@@ -1,0 +1,9 @@
+Fixed: pausing a song and not being able to resume it.
+
+• If you left something paused for a while, the play button stopped responding, and the only way out was finding the song by hand — which also started it from the beginning.
+
+• It wasn't the pause logic: it was the service lifecycle. While paused the service drops out of the foreground, and Android eventually shuts down services that aren't. On shutdown it released the player, but the "now playing" bar stayed on screen because the song itself was still in memory. That left a live bar with a button talking to nobody, and the same in the full-screen player and the floating window.
+
+• The queue, track and position now survive the service being shut down, so pressing play brings everything back exactly where it was. It just feels like the button works.
+
+• Two more ways of ending up with a dead button are covered along the way: when an error left the engine stopped, and when the queue had reached the end.

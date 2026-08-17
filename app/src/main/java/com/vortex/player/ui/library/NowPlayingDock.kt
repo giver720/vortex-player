@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,6 +56,7 @@ fun NowPlayingDock(
     onRequestPopup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val player by PlaybackHub.player.collectAsStateWithLifecycle()
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
     val entry by PlaybackHub.currentEntry.collectAsStateWithLifecycle()
@@ -161,12 +163,7 @@ fun NowPlayingDock(
                     }
                 }
 
-                IconButton(
-                    onClick = {
-                        val p = player ?: return@IconButton
-                        if (p.isPlaying) p.pause() else p.play()
-                    }
-                ) {
+                IconButton(onClick = { PlaybackService.togglePlayPause(context) }) {
                     Icon(
                         imageVector = if (uiState.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = if (uiState.isPlaying) "Pausar" else "Reproducir",

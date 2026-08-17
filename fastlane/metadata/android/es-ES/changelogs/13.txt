@@ -1,0 +1,9 @@
+Corregido: pausar una canción y no poder reanudarla.
+
+• Si dejabas algo en pausa un rato, el botón de reproducir dejaba de responder y la única salida era buscar la canción a mano, que además la empezaba desde el principio.
+
+• No era la pausa: era el ciclo de vida. En pausa el servicio deja de estar en primer plano, y Android acaba cerrando los que no lo están. Al cerrarse soltaba el reproductor, pero la barra de "sonando ahora" seguía dibujada porque la canción sí seguía en memoria. Quedaba una barra viva con un botón que no hablaba con nadie, y lo mismo en el reproductor a pantalla completa y en la ventana flotante.
+
+• Ahora la cola, la pista y el minutaje sobreviven al cierre del servicio, así que al pulsar reproducir se vuelve a levantar todo justo por donde iba. Se nota como que el botón, simplemente, funciona.
+
+• De paso se cubren otras dos formas de quedarse con el botón mudo: cuando un error dejaba el motor parado, y cuando la cola había llegado al final.

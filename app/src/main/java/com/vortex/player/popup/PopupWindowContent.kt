@@ -45,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.compose.ui.platform.LocalContext
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackService
 import com.vortex.player.ui.common.rememberPlayerUiState
@@ -66,6 +67,7 @@ fun PopupWindowContent(
     onExpand: () -> Unit
 ) {
     VortexTheme {
+        val context = LocalContext.current
         val player by PlaybackHub.player.collectAsStateWithLifecycle()
         val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
         val entry by PlaybackHub.currentEntry.collectAsStateWithLifecycle()
@@ -135,10 +137,7 @@ fun PopupWindowContent(
                             .background(VortexPalette.Neon.copy(alpha = 0.16f), VortexShapes.medium)
                             .border(1.dp, VortexPalette.Neon.copy(alpha = 0.55f), VortexShapes.medium)
                             .pointerInput(Unit) {
-                                detectTapGestures {
-                                    val p = player ?: return@detectTapGestures
-                                    if (p.isPlaying) p.pause() else p.play()
-                                }
+                                detectTapGestures { PlaybackService.togglePlayPause(context) }
                             },
                         contentAlignment = Alignment.Center
                     ) {

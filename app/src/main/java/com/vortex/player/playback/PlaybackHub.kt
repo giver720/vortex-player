@@ -29,6 +29,26 @@ object PlaybackHub {
     val currentEntry: StateFlow<MediaEntry?> = _currentEntry.asStateFlow()
 
     /**
+     * Cola, posición dentro de ella e instante del medio, guardados aquí y no en el
+     * `Player`.
+     *
+     * Es lo que permite reanudar cuando el motor ya no existe: Android se lleva por
+     * delante los servicios que no están en primer plano, y en pausa el de reproducción
+     * lo está sólo un rato. Al morir, el `Player` se libera y la interfaz se quedaba con
+     * la barra pintada y un botón que no hablaba con nadie. Con esto se puede volver a
+     * levantar exactamente la misma cola por donde iba.
+     */
+    private val _currentIndex = MutableStateFlow(0)
+    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
+
+    private val _positionMs = MutableStateFlow(0L)
+    val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
+
+    internal fun setPosition(ms: Long) {
+        if (ms >= 0) _positionMs.value = ms
+    }
+
+    /**
      * Repetición y aleatorio. Se guardan aquí, y no se leen del `Player`, porque son
      * preferencias del usuario que sobreviven al cambio de motor y a que no haya nada
      * sonando: el motor es sólo quien las obedece.
@@ -76,12 +96,25 @@ object PlaybackHub {
         _controls.value = controls
     }
 
-    internal fun setQueue(entries: List<MediaEntry>, index: Int) {
+    /**
+     * Cola nueva. La posición se recibe en vez de conservarse porque una cola distinta
+     * puede empezar en el mismo índice que la anterior: sin esto, elegir otra canción que
+     * cayera en la misma posición de la lista heredaría el minutaje de la que sonaba.
+     */
+    internal fun setQueue(entries: List<MediaEntry>, index: Int, positionMs: Long) {
         _queue.value = entries
+        _currentIndex.value = index
         _currentEntry.value = entries.getOrNull(index)
+        _positionMs.value = positionMs.coerceAtLeast(0L)
     }
 
     internal fun setCurrentIndex(index: Int) {
+        // Sólo al cambiar de medio se pone el reloj a cero: si no, reanudar saltaría a la
+        // posición que llevaba la pista anterior. Se compara con el índice actual porque
+        // al recrear la cola el motor reanuncia el mismo elemento, y borrar ahí la
+        // posición desharía justo lo que se acaba de rescatar.
+        if (index != _currentIndex.value) _positionMs.value = 0L
+        _currentIndex.value = index
         _currentEntry.value = _queue.value.getOrNull(index)
     }
 

@@ -207,7 +207,7 @@ class PlaybackService : MediaSessionService() {
     // ------------------------------------------------------------ arranque
 
     private fun startRequest(request: PlayRequest) {
-        PlaybackHub.setQueue(request.entries, request.startIndex)
+        PlaybackHub.setQueue(request.entries, request.startIndex, request.positionMs)
         fallbackAttemptedFor = null
         audioOnly = request.audioOnly
         PlaybackHub.setAudioOnly(audioOnly)
@@ -343,6 +343,7 @@ class PlaybackService : MediaSessionService() {
                 delay(4_000)
                 val player = currentPlayer
                 val entry = PlaybackHub.currentEntry.value
+                PlaybackHub.setPosition(player.currentPosition)
                 if (entry != null && player.isPlaying && player.duration > 0) {
                     repository.savePosition(
                         entry.uri.toString(),
@@ -356,6 +357,10 @@ class PlaybackService : MediaSessionService() {
 
     private fun persistNow() {
         val player = currentPlayer
+        // La posición se rescata siempre, aunque no haya duración todavía: es el último
+        // instante en que se puede leer antes de soltar el motor, y de él depende que
+        // reanudar continúe donde estaba en vez de empezar de cero.
+        PlaybackHub.setPosition(player.currentPosition)
         val entry = PlaybackHub.currentEntry.value ?: return
         if (player.duration > 0) {
             repository.savePosition(entry.uri.toString(), player.currentPosition, player.duration)
@@ -435,6 +440,48 @@ class PlaybackService : MediaSessionService() {
         fun toggleShuffle() {
             val service = instance ?: return
             service.setOrder(service.order.copy(shuffle = !service.order.shuffle))
+        }
+
+        /**
+         * Reanuda lo que estuviera sonando, exista o no todavía el motor.
+         *
+         * En pausa, el servicio deja de estar en primer plano y Android acaba
+         * llevándoselo por delante; al morir libera el `Player`. Como la cola y el medio
+         * en curso viven en [PlaybackHub] y no en el servicio, la barra seguía pintada
+         * pero `play()` no tenía a quién hablar: el botón quedaba muerto y la única
+         * salida era buscar la canción a mano y empezarla de cero.
+         *
+         * Aquí, si el motor ya no está, se levanta de nuevo la misma cola en el mismo
+         * punto. Para quien mira, el botón simplemente funciona.
+         */
+        fun resume(context: Context) {
+            PlaybackHub.player.value?.let { player ->
+                // `play()` sobre un motor parado no hace nada: si un error lo dejó en
+                // reposo, hay que rearmarlo, y si la cola llegó al final hay que volver al
+                // principio. En ambos casos el botón se quedaba igual de mudo.
+                when (player.playbackState) {
+                    Player.STATE_IDLE -> player.prepare()
+                    Player.STATE_ENDED -> player.seekToDefaultPosition()
+                    else -> Unit
+                }
+                player.play()
+                return
+            }
+            val queue = PlaybackHub.queue.value
+            if (queue.isEmpty()) return
+            play(
+                context = context,
+                entries = queue,
+                startIndex = PlaybackHub.currentIndex.value,
+                positionMs = PlaybackHub.positionMs.value,
+                audioOnly = PlaybackHub.audioOnly.value
+            )
+        }
+
+        /** Único punto por el que pasan todos los botones de reproducir/pausar. */
+        fun togglePlayPause(context: Context) {
+            val player = PlaybackHub.player.value
+            if (player != null && player.isPlaying) player.pause() else resume(context)
         }
 
         fun play(
