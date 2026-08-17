@@ -29,8 +29,11 @@ object PlaylistProgress {
     /** Sufijo del formato concreto (`.f313`) que yt-dlp añade a cada pista suelta. */
     private val FORMAT_SUFFIX = Regex("\\.f\\d+$")
 
-    /** Numeración que antepone la plantilla de lista; en pantalla ya se numera aparte. */
-    private val INDEX_PREFIX = Regex("^\\d{3} - ")
+    /**
+     * Numeración que antepone la plantilla de lista; en pantalla ya se numera aparte.
+     * Cualquier cantidad de cifras: sin índice, yt-dlp escribe "0 - " sin rellenar.
+     */
+    private val INDEX_PREFIX = Regex("^\\d+ - ")
 
     /** Posición y total del elemento que empieza, o `null` si la línea no lo dice. */
     fun position(line: String): Pair<Int, Int>? {

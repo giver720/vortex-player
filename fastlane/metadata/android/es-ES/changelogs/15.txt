@@ -7,3 +7,8 @@ El limitador ya se puede apagar, y hay seis presets nuevos de música.
 • Seis presets de música: Rock, Pop, Electrónica, Urbano, Acústico y Clásica. Van deliberadamente más marcados que los de contenido, porque un preset que no se distingue del plano no sirve de nada. Acústico y Clásica son la excepción a propósito: exagerarlos traicionaría el material, que vive de su rango dinámico.
 
 • La lista de presets se reordena: música primero, luego formas de tono (graves, agudos, sonrisa, voz, noche) y al final contenido (cine, TV, juegos, podcast). Estaban al fondo de una fila de quince y no se encontraban. El preset que tuvieras elegido no cambia.
+
+Y un fallo grave en las descargas:
+• Al bajar una playlist, los archivos podían no llegar nunca a la carpeta de destino y aun así la descarga se marcaba como terminada. El publicador contaba los archivos que tocaba copiar, no los copiados, así que cualquier fallo al escribir se tragaba en silencio: quedaba una descarga "lista" y una carpeta vacía, sin ningún error que investigar. Ahora se cuentan los escritos de verdad, y si no se escribe ninguno la descarga falla con un mensaje que dice qué hacer.
+• Si no se podía crear la carpeta de la lista, el archivo acababa suelto en la raíz del destino en vez de descartarse.
+• Un vídeo suelto bajado con "lista completa" activa llegaba llamándose "0 - Título".

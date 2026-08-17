@@ -7,3 +7,8 @@ The limiter can now be switched off, and there are six new music presets.
 • Six music presets: Rock, Pop, Electronic, Urban, Acoustic and Classical. They are deliberately more pronounced than the content ones, because a preset you can't tell apart from flat is useless. Acoustic and Classical are the deliberate exception: exaggerating them would betray material that lives on its dynamic range.
 
 • The preset list is reordered: music first, then tone shapes (bass, treble, smile, vocal, night), then content (cinema, TV, gaming, podcast). They were buried at the end of a row of fifteen. Whichever preset you had selected stays selected.
+
+And a serious download bug:
+• When downloading a playlist, files could never reach the destination folder while the download was still marked as finished. The publisher counted the files it meant to copy, not the ones it copied, so any write failure was swallowed silently: a "done" download and an empty folder, with no error to investigate. Written files are now counted for real, and if none are written the download fails with a message telling you what to do.
+• If the playlist folder couldn't be created, the file ended up loose in the destination root instead of being skipped.
+• A single video downloaded with "full playlist" enabled arrived named "0 - Title".
