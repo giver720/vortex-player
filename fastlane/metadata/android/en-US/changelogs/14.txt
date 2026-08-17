@@ -1,0 +1,17 @@
+Per-output sound profiles, clarity, ambience, and fixes underneath.
+
+• Per-output profiles: the phone speaker, wired headphones and Bluetooth can each keep their own equalizer, and Vórtex switches profile by itself when you plug or unplug. It ships off, so your current settings stay exactly as they are until you turn it on.
+
+• Clarity: lifts presence between 2 and 8 kHz, where consonants live. It rescues dull mixes. It is summed inside the equalizer, adding no new effect to the chain.
+
+• Ambience: short reverb, from small room to large room, for dry recordings. It is the only setting that hangs a separate effect off the chain, so if anything sounds wrong, turn this off first.
+
+• Three new presets: Cinema, TV and Gaming.
+
+• The equalizer now shows each band's gain above its own point on the curve instead of in a separate row.
+
+Fixed underneath:
+• Processing assumed two audio channels. On a device granting fewer, configuring it failed halfway and the whole equalizer went unapplied, with no warning at all. The real channel count is now used.
+• Enabling an effect returns a status that was never checked, so a failure passed for success.
+• If the system granted no audio session, an invalid id was used anyway and no effect ever applied.
+• The message "your device accepted processing the system output" was assumed rather than verified. It is now checked for real.

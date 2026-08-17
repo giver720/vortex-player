@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vortex.player.audio.AudioCapabilities
+import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioPreferences
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
@@ -12,14 +13,36 @@ import com.vortex.player.audio.EQ_MAX_DB
 import com.vortex.player.audio.EQ_MIN_DB
 import com.vortex.player.audio.EqPreset
 import com.vortex.player.playback.PlaybackHub
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
-    val settings: StateFlow<AudioSettings> = AudioPreferences.observe(app)
+    /** Si los perfiles por salida están activos, o se comparte uno solo. */
+    val perOutput: StateFlow<Boolean> = AudioPreferences.observePerOutput(app)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Salida activa. Se enseña siempre, aunque los perfiles estén apagados. */
+    val output: StateFlow<AudioOutput> = AudioOutput.observe(app)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AudioOutput.SPEAKER)
+
+    /**
+     * Perfil que se está editando: la salida activa si hay perfiles, o `null` —el juego de
+     * claves de siempre— si no. Todo lo que se guarda va a este perfil, de modo que ajustar
+     * el ecualizador con los auriculares puestos no toca el del altavoz.
+     */
+    private val profile: StateFlow<AudioOutput?> =
+        combine(perOutput, output) { per, out -> out.takeIf { per } }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val settings: StateFlow<AudioSettings> = profile
+        .flatMapLatest { AudioPreferences.observe(app, it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AudioSettings())
 
     /** `null` mientras no haya reproducción; sin capacidades si el motor activo es VLC. */
@@ -27,8 +50,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun update(transform: (AudioSettings) -> AudioSettings) {
         viewModelScope.launch {
-            AudioPreferences.save(getApplication(), transform(settings.value))
+            AudioPreferences.save(getApplication(), transform(settings.value), profile.value)
         }
+    }
+
+    fun setPerOutput(enabled: Boolean) {
+        viewModelScope.launch { AudioPreferences.setPerOutput(getApplication(), enabled) }
     }
 
     fun setEnabled(enabled: Boolean) = update { it.copy(enabled = enabled) }
@@ -57,6 +84,12 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setBassBoost(value: Int) = update { it.copy(bassBoost = value, bassBoostOn = value > 0) }
     fun toggleBassBoost() = update { it.copy(bassBoostOn = !it.bassBoostOn) }
 
+    fun setClarity(value: Int) = update { it.copy(clarity = value, clarityOn = value > 0) }
+    fun toggleClarity() = update { it.copy(clarityOn = !it.clarityOn) }
+
+    fun setAmbience(value: Int) = update { it.copy(ambience = value, ambienceOn = value > 0) }
+    fun toggleAmbience() = update { it.copy(ambienceOn = !it.ambienceOn) }
+
     fun setVirtualizer(value: Int) =
         update { it.copy(virtualizer = value, virtualizerOn = value > 0) }
     fun toggleVirtualizer() = update { it.copy(virtualizerOn = !it.virtualizerOn) }
@@ -72,7 +105,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             AudioPreferences.save(
                 getApplication(),
-                AudioSettings(enabled = settings.value.enabled)
+                AudioSettings(enabled = settings.value.enabled),
+                profile.value
             )
         }
     }

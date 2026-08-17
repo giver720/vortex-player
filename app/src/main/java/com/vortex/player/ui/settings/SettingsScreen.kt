@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortex.player.audio.AudioCapabilities
+import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EqPreset
@@ -59,6 +60,8 @@ fun SettingsScreen(
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
+    val output by viewModel.output.collectAsStateWithLifecycle()
+    val perOutput by viewModel.perOutput.collectAsStateWithLifecycle()
     val active = settings.enabled
 
     Box(Modifier.fillMaxSize().background(VortexPalette.Graphite)) {
@@ -112,6 +115,15 @@ fun SettingsScreen(
             }
 
             item { ScopeSelector(settings, caps, viewModel::setScope) }
+
+            item {
+                OutputProfileSelector(
+                    output = output,
+                    perOutput = perOutput,
+                    enabled = active,
+                    onToggle = viewModel::setPerOutput
+                )
+            }
 
             if (caps.advanced) {
                 item { LimiterBadge(settings) }
@@ -218,6 +230,42 @@ fun SettingsScreen(
                         enabled = active,
                         onToggle = viewModel::toggleBassBoost,
                         onChange = { viewModel.setBassBoost(it.toInt()) }
+                    )
+                }
+            }
+
+            if (caps.hasEqualizer) {
+                item {
+                    EffectSlider(
+                        title = "CLARIDAD",
+                        hint = "Realza la presencia entre 2 y 8 kHz, que es donde están las " +
+                            "consonantes. Rescata mezclas apagadas; pasado de vueltas, las " +
+                            "eses molestan.",
+                        value = settings.clarity.toFloat(),
+                        max = AudioSettings.MAX_STRENGTH.toFloat(),
+                        readout = { "${(it * 100 / AudioSettings.MAX_STRENGTH).toInt()} %" },
+                        on = settings.clarityOn,
+                        enabled = active,
+                        onToggle = viewModel::toggleClarity,
+                        onChange = { viewModel.setClarity(it.toInt()) }
+                    )
+                }
+            }
+
+            if (caps.hasVirtualizer) {
+                item {
+                    EffectSlider(
+                        title = "AMBIENTE",
+                        hint = "Reverberación corta, de sala pequeña a sala grande. Da aire " +
+                            "a grabaciones secas. Es el único efecto que se añade aparte a " +
+                            "la cadena, así que si algo sonara raro, empieza por apagarlo.",
+                        value = settings.ambience.toFloat(),
+                        max = AudioSettings.MAX_STRENGTH.toFloat(),
+                        readout = { "${(it * 100 / AudioSettings.MAX_STRENGTH).toInt()} %" },
+                        on = settings.ambienceOn,
+                        enabled = active,
+                        onToggle = viewModel::toggleAmbience,
+                        onChange = { viewModel.setAmbience(it.toInt()) }
                     )
                 }
             }
@@ -352,6 +400,58 @@ private fun ScopeSelector(
                 else -> VortexPalette.Amber
             },
             modifier = Modifier.padding(top = 8.dp)
+        )
+    }
+}
+
+/**
+ * Perfil por salida.
+ *
+ * El altavoz del móvil y unos auriculares piden curvas distintas: el primero no tiene
+ * graves y satura enseguida, los segundos los dan de sobra. Sin esto había que reajustar
+ * el ecualizador cada vez que se conectaba algo. Se enseña siempre por dónde está saliendo
+ * el sonido, aunque los perfiles estén apagados, porque es la mitad de la explicación de
+ * por qué algo suena como suena.
+ */
+@Composable
+private fun OutputProfileSelector(
+    output: AudioOutput,
+    perOutput: Boolean,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "SALIDA · ${output.label}",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (enabled) VortexPalette.TextHigh else VortexPalette.TextLow,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = perOutput,
+                onCheckedChange = { if (enabled) onToggle(it) },
+                enabled = enabled,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = VortexPalette.Graphite,
+                    checkedTrackColor = VortexPalette.Neon,
+                    uncheckedThumbColor = VortexPalette.TextLow,
+                    uncheckedTrackColor = VortexPalette.GraphiteHigh
+                )
+            )
+        }
+        Text(
+            text = if (perOutput) {
+                "Cada salida guarda sus propios ajustes. Estás editando el perfil de " +
+                    "${output.label.lowercase()}; al conectar o desconectar algo, Vórtex " +
+                    "cambia de perfil solo."
+            } else {
+                "Los mismos ajustes para todas las salidas. Actívalo si quieres una curva " +
+                    "distinta para auriculares y para el altavoz."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 4.dp)
         )
     }
 }

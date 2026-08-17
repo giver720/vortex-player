@@ -1,0 +1,17 @@
+Perfiles de sonido por auriculares, claridad, ambiente y arreglos de fondo.
+
+• Perfiles por salida: el altavoz del móvil, los auriculares por cable y los Bluetooth pueden guardar cada uno su propio ecualizador, y Vórtex cambia de perfil solo al conectar o desconectar. Viene desactivado, así que tus ajustes actuales siguen tal cual hasta que lo enciendas.
+
+• Claridad: realza la presencia entre 2 y 8 kHz, que es donde están las consonantes. Rescata mezclas apagadas. Va sumado dentro del ecualizador, sin añadir ningún efecto a la cadena.
+
+• Ambiente: reverberación corta, de sala pequeña a sala grande, para grabaciones secas. Es el único ajuste que cuelga un efecto aparte, así que si algo sonara raro, es el primero que hay que apagar.
+
+• Tres presets nuevos: Cine, TV y Juegos.
+
+• El ecualizador muestra ahora la ganancia de cada banda sobre su propio punto de la curva, en vez de en una fila aparte.
+
+Corregido por dentro:
+• El procesado daba por hecho dos canales de audio. En un dispositivo que conceda menos, configurarlo fallaba a mitad y el ecualizador entero se quedaba sin aplicar, sin ningún aviso. Ahora se usa el número real de canales.
+• Encender un efecto devuelve un estado que no se estaba mirando, así que un fallo pasaba por éxito.
+• Si el sistema no concedía sesión de audio, se usaba igualmente un identificador inválido y ningún efecto llegaba a aplicarse.
+• El mensaje "tu dispositivo aceptó procesar la salida del sistema" se daba por bueno sin comprobarlo. Ahora se verifica de verdad.

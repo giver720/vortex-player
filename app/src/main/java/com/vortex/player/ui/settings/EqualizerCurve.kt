@@ -26,7 +26,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vortex.player.audio.EQ_BANDS
 import com.vortex.player.audio.EQ_MAX_DB
 import com.vortex.player.audio.EQ_MIN_DB
@@ -51,6 +55,7 @@ fun EqualizerCurve(
     modifier: Modifier = Modifier
 ) {
     var draggingBand by remember { mutableStateOf(-1) }
+    val textMeasurer = rememberTextMeasurer()
 
     Column(modifier) {
         Box(
@@ -148,12 +153,33 @@ fun EqualizerCurve(
                     style = Stroke(width = 3f, cap = StrokeCap.Round)
                 )
 
-                points.forEach { point ->
+                points.forEachIndexed { index, point ->
                     drawCircle(color = tint, radius = 9f, center = point)
                     drawCircle(
                         color = VortexPalette.Graphite,
                         radius = 4f,
                         center = point
+                    )
+
+                    // El valor va pegado a su punto y no en una fila aparte: así se lee la
+                    // banda y su ganancia de una sola mirada, sin cruzar la vista abajo y
+                    // contar columnas para saber cuál es cuál.
+                    val gain = gains[index]
+                    val flat = abs(gain) < 0.05f
+                    val measured = textMeasurer.measure(
+                        text = if (flat) "0" else "%+.0f".format(gain),
+                        style = TextStyle(
+                            color = if (flat) VortexPalette.TextLow else VortexPalette.Cyan,
+                            fontSize = 10.sp
+                        )
+                    )
+                    drawText(
+                        textLayoutResult = measured,
+                        topLeft = Offset(
+                            (point.x - measured.size.width / 2f)
+                                .coerceIn(0f, width - measured.size.width),
+                            (point.y - measured.size.height - 14f).coerceAtLeast(2f)
+                        )
                     )
                 }
             }
@@ -165,21 +191,6 @@ fun EqualizerCurve(
                     text = shortFrequency(frequency),
                     style = MaterialTheme.typography.labelSmall,
                     color = VortexPalette.TextLow,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-            gains.forEach { gain ->
-                Text(
-                    text = if (abs(gain) < 0.05f) "0" else "%+.0f".format(gain),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (abs(gain) < 0.05f) {
-                        VortexPalette.TextLow
-                    } else {
-                        VortexPalette.Cyan
-                    },
                     modifier = Modifier.weight(1f)
                 )
             }

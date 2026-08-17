@@ -1,8 +1,10 @@
 package com.vortex.player.audio
 
+import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.LoudnessEnhancer
+import android.media.audiofx.PresetReverb
 import android.media.audiofx.Virtualizer
 import android.os.Build
 import android.util.Log
@@ -37,6 +39,7 @@ class AudioEnhancer {
 
     private var dynamics: DynamicsProcessing? = null
     private var virtualizer: Virtualizer? = null
+    private var reverb: PresetReverb? = null
 
     // Camino de respaldo para Android 8 y anteriores, donde no hay DynamicsProcessing.
     private var legacyBass: BassBoost? = null
@@ -57,11 +60,18 @@ class AudioEnhancer {
         val target = if (systemWide) GLOBAL_SESSION else playerSessionId
         if (target == sessionId && dynamics != null) return capabilities
         release()
-        sessionId = target
-        if (!systemWide && playerSessionId == 0) {
+
+        // Sin sesión válida no hay nada a lo que engancharse. `generateAudioSessionId`
+        // devuelve ERROR (-1) cuando el sistema no puede dar una, y 0 es el comodín
+        // "genérame una", no una sesión real. Antes se intentaba igual y cada efecto
+        // fallaba por su cuenta sin que nada lo dijera.
+        if (!systemWide && playerSessionId <= 0) {
+            sessionId = -1
             return AudioCapabilities().also { capabilities = it }
         }
+        sessionId = target
 
+        channelCount = REQUESTED_CHANNELS
         val advanced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             createDynamics(target)
         } else {
@@ -73,6 +83,20 @@ class AudioEnhancer {
             legacyLoudness = runCatching { LoudnessEnhancer(target) }.getOrNull()
         }
 
+        // Que un efecto se construya no significa que el dispositivo lo esté aplicando: el
+        // control puede quedárselo el sistema u otra app, y entonces todo lo que se le pida
+        // se ignora en silencio.
+        //
+        // Sólo se usa para decidir si la mezcla global fue aceptada, que es lo que la app
+        // promete comprobar. Para la sesión propia se sigue confiando en que el efecto
+        // exista: si `hasControl` diera un falso negativo en algún aparato, esconder el
+        // ecualizador sería peor que enseñarlo, y sin un móvil delante no puedo descartarlo.
+        val controlled = hasControl(dynamics) || hasControl(legacyBass) ||
+            hasControl(legacyLoudness)
+        if (!controlled) {
+            Log.w(TAG, "El dispositivo no cede el control de los efectos en la sesión $target")
+        }
+
         capabilities = AudioCapabilities(
             advanced = advanced,
             hasEqualizer = advanced,
@@ -82,15 +106,29 @@ class AudioEnhancer {
             hasVirtualizer = true,
             hasBoost = advanced || legacyLoudness != null,
             hasCompressor = advanced,
-            systemWide = systemWide && (advanced || legacyLoudness != null)
+            systemWide = systemWide && controlled
         )
         return capabilities
     }
 
+    /** `hasControl` es la única respuesta honesta a "¿me está haciendo caso el aparato?". */
+    private fun hasControl(effect: AudioEffect?): Boolean =
+        effect != null && runCatching { effect.hasControl() }.getOrDefault(false)
+
+    /**
+     * Enciende o apaga comprobando el resultado.
+     *
+     * `setEnabled` devuelve un código de estado que la sintaxis de propiedad de Kotlin
+     * (`efecto.enabled = true`) tira a la basura, así que un fallo pasaba por éxito.
+     */
+    private fun AudioEffect.applyEnabled(value: Boolean): Boolean = runCatching {
+        setEnabled(value) == AudioEffect.SUCCESS && enabled == value
+    }.getOrDefault(false)
+
     private fun createDynamics(session: Int): Boolean = runCatching {
         val config = DynamicsProcessing.Config.Builder(
             DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-            channelCount,
+            REQUESTED_CHANNELS,
             /* preEqInUse = */ true,
             /* preEqBandCount = */ EQ_BANDS.size,
             /* mbcInUse = */ true,
@@ -99,7 +137,16 @@ class AudioEnhancer {
             /* postEqBandCount = */ 0,
             /* limiterInUse = */ true
         ).build()
-        dynamics = DynamicsProcessing(0, session, config)
+        val effect = DynamicsProcessing(0, session, config)
+
+        // El aparato no tiene por qué conceder los canales que se le piden. Recorrer dos
+        // sobre un efecto que sólo tiene uno lanza excepción a mitad de configurar, y como
+        // toda la cadena se aplica dentro de un mismo `runCatching`, el ecualizador entero
+        // se quedaba sin aplicar sin un solo síntoma. Manda lo que haya concedido.
+        channelCount = runCatching { effect.channelCount }.getOrDefault(REQUESTED_CHANNELS)
+            .coerceIn(1, REQUESTED_CHANNELS)
+
+        dynamics = effect
         true
     }.getOrElse {
         Log.w(TAG, "DynamicsProcessing no disponible en la sesión $session", it)
@@ -112,6 +159,7 @@ class AudioEnhancer {
         applyDynamics(settings, on)
         applyLegacy(settings, on)
         applyVirtualizer(settings, on)
+        applyAmbience(settings, on)
     }
 
     /**
@@ -145,24 +193,29 @@ class AudioEnhancer {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
 
         runCatching {
-            dp.enabled = on
+            if (!dp.applyEnabled(on)) {
+                Log.w(TAG, "El dispositivo rechazó ${if (on) "activar" else "desactivar"} la cadena")
+                return
+            }
             if (!on) return
 
             // --- Ecualizador, con los graves sumados dentro --------------------
             val eqOn = settings.equalizerOn
             val base = settings.effectiveBands
             val bass = bassShelf(settings)
+            val clarity = clarityShelf(settings)
             for (channel in 0 until channelCount) {
                 val preEq = dp.getPreEqByChannelIndex(channel)
                 // El pre-ecualizador se deja activo aunque el usuario apague el
-                // ecualizador, porque es también quien aplica el refuerzo de graves.
+                // ecualizador, porque es también quien aplica graves y claridad.
                 preEq.isEnabled = true
                 EQ_BANDS.forEachIndexed { index, frequency ->
                     val band = preEq.getBand(index)
                     band.isEnabled = true
                     band.cutoffFrequency = frequency.toFloat()
                     val eqGain = if (eqOn) base.getOrElse(index) { 0f } else 0f
-                    band.gain = (eqGain + bass[index]).coerceIn(MIN_BAND_DB, MAX_BAND_DB)
+                    band.gain = (eqGain + bass[index] + clarity[index])
+                        .coerceIn(MIN_BAND_DB, MAX_BAND_DB)
                     preEq.setBand(index, band)
                 }
                 dp.setPreEqByChannelIndex(channel, preEq)
@@ -224,6 +277,51 @@ class AudioEnhancer {
         return BASS_CURVE.map { it * MAX_BASS_DB * amount }
     }
 
+    /**
+     * Realce de presencia. Es la "claridad" de FxSound: sube 2–8 kHz, que es donde están
+     * las consonantes y el ataque de los instrumentos, y es lo que hace que una mezcla
+     * apagada se entienda. Va sumado al ecualizador por el mismo motivo que los graves:
+     * un efecto menos en la cadena y el limitador viendo el resultado.
+     */
+    private fun clarityShelf(settings: AudioSettings): List<Float> {
+        if (!settings.clarityOn || settings.clarity <= 0) return List(EQ_BANDS.size) { 0f }
+        val amount = settings.clarity.toFloat() / AudioSettings.MAX_STRENGTH
+        return CLARITY_CURVE.map { it * MAX_CLARITY_DB * amount }
+    }
+
+    /**
+     * Ambiente por reverberación.
+     *
+     * Es el único ajuste que cuelga un efecto aparte, así que sigue la misma disciplina que
+     * el virtualizador: se crea sólo mientras se usa y se destruye al apagarlo. Encadenar
+     * efectos permanentes sobre la misma sesión es exactamente lo que rompía la ruta de
+     * audio con el refuerzo de graves antiguo.
+     */
+    private fun applyAmbience(settings: AudioSettings, on: Boolean) {
+        val wanted = on && settings.ambienceOn && settings.ambience > 0
+        if (!wanted) {
+            runCatching { reverb?.release() }
+            reverb = null
+            return
+        }
+        runCatching {
+            val effect = reverb ?: PresetReverb(0, sessionId).also { reverb = it }
+            // De sala pequeña a sala grande según la intensidad: sin escalón intermedio se
+            // pasa de "nada" a "catedral" y no hay forma de dejarlo en un punto usable.
+            val amount = settings.ambience.toFloat() / AudioSettings.MAX_STRENGTH
+            effect.preset = when {
+                amount < 0.34f -> PresetReverb.PRESET_SMALLROOM
+                amount < 0.67f -> PresetReverb.PRESET_MEDIUMROOM
+                else -> PresetReverb.PRESET_LARGEROOM
+            }
+            if (!effect.applyEnabled(true)) throw IllegalStateException("reverb rechazada")
+        }.onFailure {
+            Log.w(TAG, "Ambiente no aplicado", it)
+            runCatching { reverb?.release() }
+            reverb = null
+        }
+    }
+
     private fun applyLegacy(settings: AudioSettings, on: Boolean) {
         runCatching {
             legacyBass?.let {
@@ -249,10 +347,12 @@ class AudioEnhancer {
     fun release() {
         runCatching { dynamics?.release() }
         runCatching { virtualizer?.release() }
+        runCatching { reverb?.release() }
         runCatching { legacyBass?.release() }
         runCatching { legacyLoudness?.release() }
         dynamics = null
         virtualizer = null
+        reverb = null
         legacyBass = null
         legacyLoudness = null
         sessionId = -1
@@ -261,8 +361,17 @@ class AudioEnhancer {
     private companion object {
         const val TAG = "AudioEnhancer"
 
-        /** Sesión 0: la mezcla de salida del sistema, común a todas las apps. */
+        /**
+         * Sesión 0: la mezcla de salida del sistema, común a todas las apps.
+         *
+         * Está desaconsejada desde Android 4.0 y nunca se llegó a retirar, así que sigue
+         * funcionando en unos aparatos y en otros no, sin criterio ni aviso. Por eso el
+         * resultado se comprueba con `hasControl` en vez de darlo por bueno.
+         */
         const val GLOBAL_SESSION = 0
+
+        /** Canales que se piden al efecto; el aparato puede conceder menos. */
+        const val REQUESTED_CHANNELS = 2
 
         /** Bandas del compresor. Menos que en el ecualizador: comprimir fino suena raro. */
         val MBC_BANDS = listOf(120, 500, 2_000, 8_000)
@@ -270,7 +379,13 @@ class AudioEnhancer {
         /** Peso del realce de graves por banda, de 31 Hz a 16 kHz. */
         val BASS_CURVE = listOf(1f, 0.85f, 0.6f, 0.3f, 0.1f, 0f, 0f, 0f, 0f, 0f)
 
+        /** Peso del realce de presencia por banda, de 31 Hz a 16 kHz. */
+        val CLARITY_CURVE = listOf(0f, 0f, 0f, 0f, 0.1f, 0.35f, 0.8f, 1f, 0.85f, 0.4f)
+
         const val MAX_BASS_DB = 10f
+
+        /** Menos margen que en graves: pasado de ahí la presencia se vuelve sibilante. */
+        const val MAX_CLARITY_DB = 7f
 
         // Margen interno: la suma del ecualizador y los graves puede pasarse del rango
         // que ve el usuario, y recortarla ahí dejaría la curva plana justo donde importa.

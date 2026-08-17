@@ -19,6 +19,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.vortex.player.MainActivity
 import com.vortex.player.audio.AudioEnhancer
+import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioPreferences
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
@@ -29,6 +30,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -61,11 +64,18 @@ class PlaybackService : MediaSessionService() {
      * no llega de forma fiable, y sin identificador de sesión no hay dónde enganchar los
      * efectos: el ecualizador se quedaba sin aplicar y la pantalla de ajustes no mostraba
      * ninguna capacidad aunque hubiera música sonando.
+     *
+     * `generateAudioSessionId` puede devolver ERROR (-1) si el sistema no puede darla. En
+     * ese caso no se le impone nada a ExoPlayer: que se genere la suya y la anuncie por
+     * `onAudioSessionIdChanged`, que es cuando se engancharán los efectos. Antes se le
+     * asignaba el -1 tal cual y ya no había sesión válida en toda la reproducción.
      */
     private val audioSessionId: Int by lazy {
         val manager = getSystemService(AUDIO_SERVICE) as AudioManager
-        manager.generateAudioSessionId()
+        runCatching { manager.generateAudioSessionId() }.getOrDefault(AudioManager.ERROR)
     }
+
+    private val hasOwnSession: Boolean get() = audioSessionId > 0
 
     private var usingVlc = false
     private var audioOnly = false
@@ -143,20 +153,46 @@ class PlaybackService : MediaSessionService() {
      * cada vez; si no, los ajustes dejan de tener efecto en la segunda canción sin que nada
      * lo indique.
      */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun startAudioEnhancer() {
-        refreshAudioSession(audioSessionId)
+        // Sin sesión propia no se engancha nada todavía: se espera al aviso del reproductor.
+        if (hasOwnSession) refreshAudioSession(audioSessionId)
         scope.launch {
-            AudioPreferences.observe(this@PlaybackService).collect { settings ->
-                val scopeChanged = settings.scope != audioSettings.scope
-                audioSettings = settings
-                // Cambiar de ámbito significa engancharse a otra sesión distinta, así que
-                // hay que rehacer la cadena entera, no sólo reajustar sus valores.
-                if (scopeChanged) refreshAudioSession(audioSessionId) else enhancer.apply(settings)
-            }
+            // Con perfiles por salida, conectar unos auriculares cambia el juego de ajustes
+            // que se lee; sin ellos se usa el de siempre, sin sufijo, que es el que ya
+            // tenía guardado quien venga de una versión anterior.
+            combine(
+                AudioPreferences.observePerOutput(this@PlaybackService),
+                AudioOutput.observe(this@PlaybackService)
+            ) { perOutput, output -> output.takeIf { perOutput } }
+                .flatMapLatest { profile ->
+                    AudioPreferences.observe(this@PlaybackService, profile)
+                }
+                .collect { settings ->
+                    val scopeChanged = settings.scope != audioSettings.scope
+                    audioSettings = settings
+                    // Cambiar de ámbito significa engancharse a otra sesión distinta, así
+                    // que hay que rehacer la cadena entera, no sólo reajustar sus valores.
+                    if (scopeChanged) {
+                        refreshAudioSession(effectiveSessionId)
+                    } else {
+                        enhancer.apply(settings)
+                    }
+                }
         }
     }
 
+    /**
+     * Sesión sobre la que están enganchados los efectos ahora mismo.
+     *
+     * Puede no ser la nuestra: si el sistema no concede una, la pone ExoPlayer y llega por
+     * `onAudioSessionIdChanged`. Se recuerda aquí para que reenganchar por cualquier otro
+     * motivo —cambio de ámbito, vuelta desde VLC— no la pise con una que ya no vale.
+     */
+    private var effectiveSessionId: Int = 0
+
     private fun refreshAudioSession(sessionId: Int) {
+        effectiveSessionId = sessionId
         val capabilities = enhancer.attach(
             playerSessionId = sessionId,
             systemWide = audioSettings.scope == AudioScope.SYSTEM
@@ -180,7 +216,9 @@ class PlaybackService : MediaSessionService() {
             .apply {
                 // Sin esto, el modo solo-audio se corta al apagar la pantalla.
                 setWakeMode(C.WAKE_MODE_NETWORK)
-                audioSessionId = this@PlaybackService.audioSessionId
+                // Sólo se impone si el sistema concedió una de verdad; si no, ExoPlayer
+                // genera la suya y la anuncia por `onAudioSessionIdChanged`.
+                if (hasOwnSession) audioSessionId = this@PlaybackService.audioSessionId
                 addListener(playerListener)
             }
 
@@ -281,7 +319,8 @@ class PlaybackService : MediaSessionService() {
         mediaSession?.player = exoPlayer
         PlaybackHub.setPlayer(exoPlayer, exoControls)
         applyOrder()
-        refreshAudioSession(audioSessionId)
+        // La que esté valiendo, que no tiene por qué ser la nuestra.
+        refreshAudioSession(effectiveSessionId)
     }
 
     private val vlcListener = object : Player.Listener {
