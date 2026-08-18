@@ -47,8 +47,9 @@ object DownloadPublisher {
         val files = produced.filterNot { it.isSidecar() }
         if (files.isEmpty()) {
             throw IllegalStateException(
-                "La descarga sólo dejó miniaturas y archivos auxiliares, ningún medio. " +
-                    "Suele significar que la conversión final falló."
+                "La descarga no dejó ningún archivo de vídeo o audio, sólo miniaturas y " +
+                    "archivos de apoyo. Mira el registro de incidencias en el menú de la " +
+                    "cola para ver qué dijo el motor."
             )
         }
 
@@ -110,6 +111,16 @@ object DownloadPublisher {
     )
 
     private fun File.isSidecar(): Boolean = extension.lowercase() in SIDECAR_EXTENSIONS
+
+    /**
+     * Si este fichero es la descarga y no algo de apoyo.
+     *
+     * Lo usa también [DownloadService] para decidir si yt-dlp produjo algo de verdad. Es
+     * importante que sea el mismo criterio: contar la miniatura como "algo se descargó"
+     * hacía que se descartara el error real de yt-dlp y se reportara otro genérico en su
+     * lugar, que es lo que dejaba sin diagnóstico cada fallo.
+     */
+    fun isMedia(file: File): Boolean = !file.isSidecar()
 
     /**
      * Deshace la carpeta señuelo que yt-dlp crea cuando el enlace no era una lista.

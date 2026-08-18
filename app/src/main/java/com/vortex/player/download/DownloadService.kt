@@ -119,6 +119,12 @@ class DownloadService : Service() {
         var playlistCount = 0
         val playlistItems = mutableListOf<String>()
 
+        // Las líneas de error que escupe yt-dlp. Traen el motivo de verdad —formato no
+        // disponible, vídeo privado, bloqueo por sospecha de bot— y hasta ahora se
+        // perdían: la fila guardaba el mensaje de la excepción, que casi siempre es un
+        // "process exited with code 1" que no dice nada.
+        val engineErrors = mutableListOf<String>()
+
         try {
             // Comprobar el destino antes de gastar ancho de banda. Fallar aquí cuesta dos
             // segundos; fallar al final cuesta la descarga entera y no deja ni el fichero.
@@ -177,6 +183,12 @@ class DownloadService : Service() {
             ) { progress, eta, line ->
                 val clamped = (progress / 100f).coerceIn(0f, 1f)
                 val now = System.currentTimeMillis()
+
+                val trimmed = line.trim()
+                if (trimmed.startsWith("ERROR", ignoreCase = true) && trimmed !in engineErrors) {
+                    // Un puñado basta: en una lista larga el mismo fallo se repite por pista.
+                    if (engineErrors.size < 5) engineErrors += trimmed
+                }
 
                 var positionChanged = false
                 PlaylistProgress.position(line)?.let { (index, total) ->
@@ -240,15 +252,21 @@ class DownloadService : Service() {
                 }
                 }
             }.onFailure { error ->
-                // Si no quedó ningún fichero, el fallo era real: se propaga.
-                val produced = workspace.walkTopDown().any { it.isFile && it.length() > 0 }
+                // Sólo cuenta el medio. Antes valía cualquier fichero, y como la miniatura
+                // se baja antes que el vídeo, bastaba con que existiera para dar el trabajo
+                // por productivo: el error real de yt-dlp —que traía el motivo— se
+                // descartaba aquí, y más adelante se reportaba otro genérico en su lugar.
+                val produced = workspace.walkTopDown()
+                    .any { it.isFile && it.length() > 0 && DownloadPublisher.isMedia(it) }
                 if (!produced) throw error
             }
 
             // yt-dlp también puede terminar con éxito sin bajar nada: pasa cuando el
             // filtro de duración descarta los cinco candidatos. Sin esta comprobación se
             // marcaría como completada una descarga que dejó la carpeta vacía.
-            if (workspace.walkTopDown().none { it.isFile && it.length() > 0 }) {
+            if (workspace.walkTopDown()
+                    .none { it.isFile && it.length() > 0 && DownloadPublisher.isMedia(it) }
+            ) {
                 throw IllegalStateException(
                     if (job.targetDurationMs > 0) {
                         "Ningún resultado de YouTube coincide con la duración de la canción"
@@ -297,13 +315,21 @@ class DownloadService : Service() {
             MediaRepository.get(this).refresh()
         } catch (e: Exception) {
             val cancelled = cancelledJobs.remove(job.id)
+            // Lo que dijo el motor manda sobre el mensaje de la excepción: "exited with
+            // code 1" no le sirve a nadie, y el motivo real ya venía escrito en la salida.
+            val detail = engineErrors.joinToString(SEPARATOR).takeIf { it.isNotBlank() }
             if (!cancelled) {
-                DownloadLog.record(this, "Falló «${job.title.ifBlank { job.url }}»", e)
+                DownloadLog.record(
+                    this,
+                    "Falló «${job.title.ifBlank { job.url }}»" +
+                        detail?.let { SEPARATOR + it }.orEmpty(),
+                    e
+                )
             }
             repository.update(
                 job.copy(
                     status = if (cancelled) DownloadStatus.CANCELLED else DownloadStatus.FAILED,
-                    errorMessage = if (cancelled) null else e.message ?: e.toString(),
+                    errorMessage = if (cancelled) null else detail ?: e.message ?: e.toString(),
                     finishedAt = System.currentTimeMillis(),
                     // Se conserva por dónde iba: en una lista larga, saber que falló en la
                     // pista 31 de 40 es la mitad del diagnóstico.
@@ -367,6 +393,9 @@ class DownloadService : Service() {
     }
 
     companion object {
+        /** Separador de las líneas de error del motor. */
+        private const val SEPARATOR = "\n"
+
         private const val ACTION_CANCEL_CURRENT = "com.vortex.player.action.CANCEL_DOWNLOAD"
         private const val NOTIFICATION_ID = 7781
 

@@ -1,0 +1,11 @@
+Cuando una descarga falla, por fin dice por qué.
+
+• Vórtex descartaba el error real del motor y mostraba otro genérico en su lugar. El motivo: para decidir si una descarga había producido algo, contaba cualquier archivo que hubiera quedado, y la miniatura se descarga antes que el vídeo. Bastaba con que existiera esa imagen para dar el trabajo por productivo, tirar el error verdadero y reportar después "la conversión final falló", cuando la conversión ni siquiera había llegado a ejecutarse.
+
+• Ahora sólo cuentan los archivos de vídeo y audio, con el mismo criterio que se usa al guardar. El error del motor vuelve a llegar entero.
+
+• Y se muestra lo que dice yt-dlp: formato no disponible, vídeo privado, bloqueo por sospecha de robot. Antes se guardaba el mensaje de la excepción, que suele ser un "process exited with code 1" que no ayuda a nadie. Ese motivo aparece ahora en la tarjeta de la descarga y en el registro de incidencias.
+
+• El mensaje genérico deja de inventarse una causa y te remite al registro.
+
+Si los fallos vienen del bloqueo de YouTube por sospecha de robot, no se arreglan desde la app: actualiza yt-dlp desde ajustes, en MOTOR DE DESCARGAS.

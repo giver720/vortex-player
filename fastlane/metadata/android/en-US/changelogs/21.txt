@@ -1,0 +1,11 @@
+When a download fails, it finally says why.
+
+• Vórtex was discarding the engine's real error and showing a generic one instead. The reason: to decide whether a download had produced anything, it counted any file left behind, and the thumbnail downloads before the video. That image existing was enough to call the job productive, throw away the true error, and later report "the final conversion failed" when conversion had never even run.
+
+• Only video and audio files count now, using the same rule applied when saving. The engine's error comes through intact.
+
+• And what yt-dlp says is shown: format unavailable, private video, blocked on suspicion of being a bot. Previously the exception message was stored, usually a "process exited with code 1" that helps nobody. That reason now appears on the download card and in the incident log.
+
+• The generic message no longer invents a cause and points you to the log instead.
+
+If the failures come from YouTube's bot-suspicion block, they can't be fixed from the app: update yt-dlp from settings, under DOWNLOAD ENGINE.
