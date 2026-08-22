@@ -26,6 +26,14 @@ object EnginePreferences {
     private val LAST_UPDATE_RESULT = stringPreferencesKey("last_engine_update_result")
     private val AUTO_UPDATE = booleanPreferencesKey("auto_update_engine")
     private val CONCURRENT_DOWNLOADS = intPreferencesKey("concurrent_downloads")
+    private val ADAPTIVE_CONCURRENCY = booleanPreferencesKey("adaptive_concurrency")
+    private val YOUTUBE_LIMIT = intPreferencesKey("youtube_concurrency_limit")
+    private val OTHER_LIMIT = intPreferencesKey("other_concurrency_limit")
+    private val WIFI_ONLY = booleanPreferencesKey("downloads_wifi_only")
+    private val CHARGING_ONLY = booleanPreferencesKey("downloads_charging_only")
+    private val DOWNLOAD_SCHEDULE = stringPreferencesKey("download_schedule")
+    private val BANDWIDTH_LIMIT = intPreferencesKey("download_bandwidth_limit_kbps")
+    private val MAX_AUTOMATIC_RETRIES = intPreferencesKey("download_max_automatic_retries")
 
     /** Una vez al día es suficiente: yt-dlp publica versiones cada pocos días. */
     private const val INTERVAL_MS = 24 * 60 * 60 * 1000L
@@ -42,6 +50,22 @@ object EnginePreferences {
             DownloadConcurrency.clamp(prefs[CONCURRENT_DOWNLOADS] ?: DownloadConcurrency.DEFAULT)
         }
 
+    fun downloadPolicy(context: Context): Flow<DownloadPolicy> =
+        context.engineDataStore.data.map { prefs ->
+            DownloadPolicy(
+                adaptiveConcurrency = prefs[ADAPTIVE_CONCURRENCY] ?: true,
+                youtubeLimit = DownloadConcurrency.clamp(prefs[YOUTUBE_LIMIT] ?: 2),
+                otherLimit = DownloadConcurrency.clamp(prefs[OTHER_LIMIT] ?: 4),
+                wifiOnly = prefs[WIFI_ONLY] ?: false,
+                chargingOnly = prefs[CHARGING_ONLY] ?: false,
+                schedule = prefs[DOWNLOAD_SCHEDULE]
+                    ?.let { runCatching { DownloadSchedule.valueOf(it) }.getOrNull() }
+                    ?: DownloadSchedule.ANYTIME,
+                bandwidthLimitKbps = (prefs[BANDWIDTH_LIMIT] ?: 0).coerceAtLeast(0),
+                maxAutomaticRetries = (prefs[MAX_AUTOMATIC_RETRIES] ?: 3).coerceIn(0, 5)
+            )
+        }
+
     suspend fun setAutoUpdate(context: Context, enabled: Boolean) {
         context.engineDataStore.edit { it[AUTO_UPDATE] = enabled }
     }
@@ -50,6 +74,37 @@ object EnginePreferences {
         context.engineDataStore.edit {
             it[CONCURRENT_DOWNLOADS] = DownloadConcurrency.clamp(value)
         }
+    }
+
+    suspend fun setAdaptiveConcurrency(context: Context, enabled: Boolean) {
+        context.engineDataStore.edit { it[ADAPTIVE_CONCURRENCY] = enabled }
+    }
+
+    suspend fun setSourceLimits(context: Context, youtube: Int, other: Int) {
+        context.engineDataStore.edit {
+            it[YOUTUBE_LIMIT] = DownloadConcurrency.clamp(youtube)
+            it[OTHER_LIMIT] = DownloadConcurrency.clamp(other)
+        }
+    }
+
+    suspend fun setWifiOnly(context: Context, enabled: Boolean) {
+        context.engineDataStore.edit { it[WIFI_ONLY] = enabled }
+    }
+
+    suspend fun setChargingOnly(context: Context, enabled: Boolean) {
+        context.engineDataStore.edit { it[CHARGING_ONLY] = enabled }
+    }
+
+    suspend fun setDownloadSchedule(context: Context, schedule: DownloadSchedule) {
+        context.engineDataStore.edit { it[DOWNLOAD_SCHEDULE] = schedule.name }
+    }
+
+    suspend fun setBandwidthLimit(context: Context, kbps: Int) {
+        context.engineDataStore.edit { it[BANDWIDTH_LIMIT] = kbps.coerceAtLeast(0) }
+    }
+
+    suspend fun setMaxAutomaticRetries(context: Context, retries: Int) {
+        context.engineDataStore.edit { it[MAX_AUTOMATIC_RETRIES] = retries.coerceIn(0, 5) }
     }
 
     suspend fun shouldAutoUpdate(context: Context): Boolean {

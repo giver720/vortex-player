@@ -205,6 +205,8 @@ object YtDlpEngine {
         targetDurationMs: Long = 0,
         /** Nombre de fichero sin extensión. Se usa para no heredar el título del vídeo. */
         outputName: String? = null,
+        /** Límite por proceso en Kbit/s. 0 deja que la fuente use todo el ancho disponible. */
+        rateLimitKbps: Int = 0,
         onProgress: (Float, Long, String) -> Unit
     ): YoutubeDLResponse = withContext(Dispatchers.IO) {
         val ytdlp = YoutubeDLRequest(sourceOverride ?: request.url).apply {
@@ -228,6 +230,13 @@ object YtDlpEngine {
             }
             addOption("--no-mtime")
             addOption("--no-warnings")
+            // El workspace sobrevive a cierres y reintentos. yt-dlp continúa el `.part`
+            // en vez de volver a transferir desde cero.
+            addOption("--continue")
+            addOption("--part")
+            addOption("--retries", "3")
+            addOption("--fragment-retries", "5")
+            if (rateLimitKbps > 0) addOption("--limit-rate", "${rateLimitKbps}K")
 
             // Sin esto, un fallo de postprocesado se lleva por delante la pista entera.
             // El valor por defecto de yt-dlp es "only_download", que sólo perdona los

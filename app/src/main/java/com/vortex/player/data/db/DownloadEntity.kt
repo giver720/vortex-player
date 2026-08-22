@@ -19,6 +19,7 @@ import com.vortex.player.download.VideoQuality
     tableName = "downloads",
     indices = [
         Index(value = ["status", "createdAt"]),
+        Index(value = ["status", "nextAttemptAt", "priority", "createdAt"]),
         Index(value = ["sourceId"])
     ]
 )
@@ -53,6 +54,16 @@ data class DownloadEntity(
     /** Línea cruda de yt-dlp: velocidad, tamaño, fragmento… Se muestra tal cual en el HUD. */
     val statusLine: String = "",
     val errorMessage: String? = null,
+
+    /** Mayor valor = sale antes de la cola; no altera el orden dentro de la misma prioridad. */
+    val priority: Int = 0,
+    /** Intentos automáticos ya consumidos y momento a partir del que puede reintentarse. */
+    val attemptCount: Int = 0,
+    val nextAttemptAt: Long = 0,
+    /** Estimación conservadora para avisar antes de agotar el almacenamiento. */
+    val estimatedBytes: Long = 0,
+    /** Se cambió a un contenedor más tolerante después de un error de formato. */
+    val fallbackApplied: Boolean = false,
 
     /**
      * Consulta que se pasa a yt-dlp en lugar de [url]. La usan las canciones venidas de

@@ -54,7 +54,7 @@ class DownloadRepository(private val dao: DownloadDao) {
         base: DownloadRequest
     ): Int {
         val entities = tracks.map { track ->
-            DownloadEntity(
+            val entity = DownloadEntity(
                 url = base.url,
                 title = "${track.artist} - ${track.title}",
                 uploader = track.artist,
@@ -74,6 +74,7 @@ class DownloadRepository(private val dao: DownloadDao) {
                 sponsorMode = base.sponsor.mode,
                 sponsorCategories = base.sponsor.categoriesCsv
             )
+            entity.copy(estimatedBytes = DownloadEstimator.estimateBytes(entity))
         }
         dao.insertAll(entities)
         return tracks.size
@@ -93,7 +94,7 @@ class DownloadRepository(private val dao: DownloadDao) {
         val entities = entries.mapIndexed { offset, entry ->
             val number = entry.index.takeIf { it > 0 } ?: offset + 1
             val prefix = number.toString().padStart(width, '0')
-            DownloadEntity(
+            val entity = DownloadEntity(
                 url = entry.url,
                 title = entry.title,
                 uploader = entry.uploader,
@@ -116,6 +117,12 @@ class DownloadRepository(private val dao: DownloadDao) {
                 sponsorMode = base.sponsor.mode,
                 sponsorCategories = base.sponsor.categoriesCsv
             )
+            entity.copy(
+                estimatedBytes = DownloadEstimator.estimateBytes(
+                    entity,
+                    entry.durationSeconds * 1_000
+                )
+            )
         }
         dao.insertAll(entities)
         return entities.size
@@ -123,7 +130,10 @@ class DownloadRepository(private val dao: DownloadDao) {
 
     suspend fun completedSourceIds(): Set<String> = dao.completedSourceIds().toSet()
 
-    suspend fun nextQueued(): DownloadEntity? = dao.nextQueued()
+    suspend fun eligibleQueued(now: Long = System.currentTimeMillis()): List<DownloadEntity> =
+        dao.eligibleQueued(now)
+
+    suspend fun nextRetryAt(now: Long = System.currentTimeMillis()): Long? = dao.nextRetryAt(now)
 
     suspend fun get(id: Long): DownloadEntity? = dao.get(id)
 
@@ -138,6 +148,13 @@ class DownloadRepository(private val dao: DownloadDao) {
     ) = dao.updateProgress(id, status, progress, eta, line)
 
     suspend fun updateStatus(id: Long, status: DownloadStatus) = dao.updateStatus(id, status)
+
+    suspend fun prioritize(id: Long, first: Boolean) {
+        val priority = if (first) dao.maxQueuedPriority() + 1 else dao.minQueuedPriority() - 1
+        dao.updatePriority(id, priority)
+    }
+
+    suspend fun hasExistingUrl(url: String): Boolean = dao.existingUrlCount(url.trim()) > 0
 
     suspend fun updatePlaylistPosition(id: Long, index: Int, count: Int, items: List<String>) =
         dao.updatePlaylistPosition(id, index, count, items.joinToString("\n"))
@@ -156,6 +173,8 @@ class DownloadRepository(private val dao: DownloadDao) {
                 etaSeconds = -1,
                 statusLine = "",
                 errorMessage = null,
+                attemptCount = 0,
+                nextAttemptAt = 0,
                 finishedAt = null,
                 // Un reintento empieza la lista de cero: conservar el contador enseñaría
                 // "17/24" y las pistas de la vez anterior sobre una descarga recién nacida.
@@ -187,6 +206,8 @@ class DownloadRepository(private val dao: DownloadDao) {
                     etaSeconds = -1,
                     statusLine = "",
                     errorMessage = null,
+                    attemptCount = 0,
+                    nextAttemptAt = 0,
                     finishedAt = null
                 )
             )

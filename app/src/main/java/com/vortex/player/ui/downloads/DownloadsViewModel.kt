@@ -10,9 +10,11 @@ import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DestinationStore
 import com.vortex.player.download.DownloadConcurrency
 import com.vortex.player.download.DownloadKind
+import com.vortex.player.download.DownloadPolicy
 import com.vortex.player.download.DownloadRepository
 import com.vortex.player.download.DownloadRequest
 import com.vortex.player.download.DownloadService
+import com.vortex.player.download.DownloadSchedule
 import com.vortex.player.download.EnginePreferences
 import com.vortex.player.download.SponsorCategory
 import com.vortex.player.download.SponsorMode
@@ -58,6 +60,14 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             SharingStarted.Eagerly,
             DownloadConcurrency.DEFAULT
         )
+    val downloadPolicy: StateFlow<DownloadPolicy> =
+        EnginePreferences.downloadPolicy(app).stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            DownloadPolicy()
+        )
+    val effectiveConcurrency: StateFlow<Int> = DownloadService.effectiveConcurrency
+    val policyBlockReason: StateFlow<String?> = DownloadService.policyBlockReason
 
     private val _url = MutableStateFlow("")
     val url: StateFlow<String> = _url.asStateFlow()
@@ -264,6 +274,10 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun enqueueDirect(link: String) {
         viewModelScope.launch {
+            if (repository.hasExistingUrl(link)) {
+                _message.value = "Ese enlace ya está en la cola"
+                return@launch
+            }
             repository.enqueue(
                 DownloadRequest(
                     url = link,
@@ -532,8 +546,21 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun prioritize(id: Long, first: Boolean) {
+        viewModelScope.launch {
+            repository.prioritize(id, first)
+            _message.value = if (first) "Descarga movida al principio" else
+                "Descarga enviada al final"
+        }
+    }
+
     fun remove(id: Long) {
-        viewModelScope.launch { repository.remove(id) }
+        viewModelScope.launch {
+            repository.remove(id)
+            withContext(Dispatchers.IO) {
+                DestinationStore.workspace(getApplication(), id).deleteRecursively()
+            }
+        }
     }
 
     fun clearFinished() {
@@ -553,9 +580,15 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAll() {
         viewModelScope.launch {
             val wasPaused = queuePaused.value
+            val workspaceIds = downloads.value.map { it.id }
             DownloadService.setQueuePaused(getApplication(), true)
             DownloadService.cancelAll()
             repository.clearAll()
+            withContext(Dispatchers.IO) {
+                workspaceIds.forEach {
+                    DestinationStore.workspace(getApplication(), it).deleteRecursively()
+                }
+            }
             if (!wasPaused) DownloadService.setQueuePaused(getApplication(), false)
             _message.value = "Cola vaciada"
         }
@@ -565,9 +598,15 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelPending() {
         viewModelScope.launch {
             val wasPaused = queuePaused.value
+            val workspaceIds = downloads.value.filter { !it.status.isTerminal }.map { it.id }
             DownloadService.setQueuePaused(getApplication(), true)
             DownloadService.cancelAll()
             repository.clearPending()
+            withContext(Dispatchers.IO) {
+                workspaceIds.forEach {
+                    DestinationStore.workspace(getApplication(), it).deleteRecursively()
+                }
+            }
             if (!wasPaused) DownloadService.setQueuePaused(getApplication(), false)
             _message.value = "Descargas pendientes canceladas"
         }
@@ -618,6 +657,56 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             // El servicio observa este ajuste y adapta las ranuras sin interrumpir los
             // procesos que ya están trabajando.
             _message.value = "$safeValue descarga${if (safeValue == 1) "" else "s"} a la vez"
+        }
+    }
+
+    fun setAdaptiveConcurrency(enabled: Boolean) {
+        viewModelScope.launch {
+            EnginePreferences.setAdaptiveConcurrency(getApplication(), enabled)
+        }
+    }
+
+    fun setYoutubeLimit(value: Int) {
+        viewModelScope.launch {
+            EnginePreferences.setSourceLimits(
+                getApplication(),
+                value,
+                downloadPolicy.value.otherLimit
+            )
+        }
+    }
+
+    fun setOtherLimit(value: Int) {
+        viewModelScope.launch {
+            EnginePreferences.setSourceLimits(
+                getApplication(),
+                downloadPolicy.value.youtubeLimit,
+                value
+            )
+        }
+    }
+
+    fun setWifiOnly(enabled: Boolean) {
+        viewModelScope.launch { EnginePreferences.setWifiOnly(getApplication(), enabled) }
+    }
+
+    fun setChargingOnly(enabled: Boolean) {
+        viewModelScope.launch { EnginePreferences.setChargingOnly(getApplication(), enabled) }
+    }
+
+    fun setDownloadSchedule(schedule: DownloadSchedule) {
+        viewModelScope.launch {
+            EnginePreferences.setDownloadSchedule(getApplication(), schedule)
+        }
+    }
+
+    fun setBandwidthLimit(kbps: Int) {
+        viewModelScope.launch { EnginePreferences.setBandwidthLimit(getApplication(), kbps) }
+    }
+
+    fun setAutomaticRetries(value: Int) {
+        viewModelScope.launch {
+            EnginePreferences.setMaxAutomaticRetries(getApplication(), value)
         }
     }
 

@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -83,6 +85,8 @@ import com.vortex.player.download.DestinationStore
 import com.vortex.player.download.DownloadConcurrency
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadLog
+import com.vortex.player.download.DownloadPolicy
+import com.vortex.player.download.DownloadSchedule
 import com.vortex.player.download.DownloadStatus
 import com.vortex.player.download.PlaylistProgress
 import com.vortex.player.download.SponsorCategory
@@ -131,6 +135,9 @@ fun DownloadsScreen(
     val activeJobIds by viewModel.activeJobIds.collectAsStateWithLifecycle()
     val queuePaused by viewModel.queuePaused.collectAsStateWithLifecycle()
     val concurrentDownloads by viewModel.concurrentDownloads.collectAsStateWithLifecycle()
+    val downloadPolicy by viewModel.downloadPolicy.collectAsStateWithLifecycle()
+    val effectiveConcurrency by viewModel.effectiveConcurrency.collectAsStateWithLifecycle()
+    val policyBlockReason by viewModel.policyBlockReason.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val engineReady by viewModel.engineReady.collectAsStateWithLifecycle()
     val isSpotify by viewModel.isSpotifyLink.collectAsStateWithLifecycle()
@@ -218,7 +225,7 @@ fun DownloadsScreen(
     var visibleLimit by remember(queueFilter, queueQuery) { mutableStateOf(QUEUE_PAGE_SIZE) }
     val visible = filteredJobs.take(visibleLimit)
 
-    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, thumbnail, metadata, sponsorSettings, concurrentDownloads) {
+    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, thumbnail, metadata, sponsorSettings, concurrentDownloads, downloadPolicy) {
         buildList {
             add(kind.label)
             if (kind == DownloadKind.VIDEO) {
@@ -233,6 +240,8 @@ fun DownloadsScreen(
             if (metadata) add("META")
             if (sponsorSettings.isActive) add("SPONSOR")
             add("$concurrentDownloads A LA VEZ")
+            if (downloadPolicy.adaptiveConcurrency) add("AUTO")
+            if (downloadPolicy.wifiOnly) add("WI-FI")
         }.joinToString(" · ")
     }
 
@@ -441,7 +450,23 @@ fun DownloadsScreen(
             if (optionsExpanded) item {
                 ParallelDownloadsSection(
                     value = concurrentDownloads,
+                    effectiveValue = effectiveConcurrency,
                     onValueChange = viewModel::setConcurrentDownloads
+                )
+            }
+
+            if (optionsExpanded) item {
+                SmartDownloadPolicySection(
+                    policy = downloadPolicy,
+                    blockReason = policyBlockReason,
+                    onAdaptive = viewModel::setAdaptiveConcurrency,
+                    onYoutubeLimit = viewModel::setYoutubeLimit,
+                    onOtherLimit = viewModel::setOtherLimit,
+                    onWifiOnly = viewModel::setWifiOnly,
+                    onChargingOnly = viewModel::setChargingOnly,
+                    onSchedule = viewModel::setDownloadSchedule,
+                    onBandwidth = viewModel::setBandwidthLimit,
+                    onRetries = viewModel::setAutomaticRetries
                 )
             }
 
@@ -525,6 +550,8 @@ fun DownloadsScreen(
                         jobs = downloads,
                         activeJobIds = activeJobIds,
                         paused = queuePaused,
+                        policyBlockReason = policyBlockReason,
+                        effectiveConcurrency = effectiveConcurrency,
                         onTogglePause = viewModel::toggleQueuePaused
                     )
                 }
@@ -583,7 +610,9 @@ fun DownloadsScreen(
                     isActive = job.id in activeJobIds,
                     onCancel = { viewModel.cancel(job.id) },
                     onRetry = { viewModel.retry(job.id) },
-                    onRemove = { viewModel.remove(job.id) }
+                    onRemove = { viewModel.remove(job.id) },
+                    onPrioritizeFirst = { viewModel.prioritize(job.id, true) },
+                    onPrioritizeLast = { viewModel.prioritize(job.id, false) }
                 )
             }
 
@@ -1216,6 +1245,8 @@ private fun QueueOverviewCard(
     jobs: List<DownloadEntity>,
     activeJobIds: Set<Long>,
     paused: Boolean,
+    policyBlockReason: String?,
+    effectiveConcurrency: Int,
     onTogglePause: () -> Unit
 ) {
     val activeJobs = jobs.filter { it.id in activeJobIds }
@@ -1251,6 +1282,7 @@ private fun QueueOverviewCard(
                     text = when {
                         paused && active != null -> "PAUSA PENDIENTE"
                         paused -> "COLA PAUSADA"
+                        policyBlockReason != null -> "ESPERANDO CONDICIONES"
                         activeCount > 1 -> "$activeCount DESCARGAS SIMULTÁNEAS"
                         active != null -> "DESCARGANDO AHORA"
                         pending > 0 -> "PREPARANDO COLA"
@@ -1264,7 +1296,7 @@ private fun QueueOverviewCard(
                     }
                 )
                 Text(
-                    text = active?.title?.ifBlank { active.url }?.let { title ->
+                    text = policyBlockReason ?: active?.title?.ifBlank { active.url }?.let { title ->
                         if (activeCount > 1) "$title · y ${activeCount - 1} más" else title
                     }
                         ?: if (pending > 0) "$queued esperando para descargar" else
@@ -1340,6 +1372,14 @@ private fun QueueOverviewCard(
             QueueMetric("EN COLA", queued, VortexPalette.TextMid)
             QueueMetric("LISTAS", completed, VortexPalette.Neon)
             QueueMetric("ERRORES", errors, if (errors > 0) VortexPalette.Magenta else VortexPalette.TextLow)
+        }
+        if (pending > 0 && effectiveConcurrency > 0) {
+            Text(
+                text = "Motor inteligente: hasta $effectiveConcurrency activas ahora",
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextLow,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 }
@@ -1438,6 +1478,7 @@ private fun QueueTab(
 @Composable
 private fun ParallelDownloadsSection(
     value: Int,
+    effectiveValue: Int,
     onValueChange: (Int) -> Unit
 ) {
     var sliderValue by remember(value) { mutableStateOf(value.toFloat()) }
@@ -1464,7 +1505,11 @@ private fun ParallelDownloadsSection(
                     color = VortexPalette.TextHigh
                 )
                 Text(
-                    text = "Puedes mover el control o tocar directamente un número.",
+                    text = if (effectiveValue in 1 until selected) {
+                        "El motor usa $effectiveValue ahora según el estado del dispositivo."
+                    } else {
+                        "Puedes mover el control o tocar directamente un número."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = VortexPalette.TextLow
                 )
@@ -1524,6 +1569,156 @@ private fun ParallelDownloadsSection(
             color = if (selected > 5) VortexPalette.Amber else VortexPalette.TextLow,
             modifier = Modifier.padding(top = 9.dp)
         )
+    }
+}
+
+@Composable
+private fun SmartDownloadPolicySection(
+    policy: DownloadPolicy,
+    blockReason: String?,
+    onAdaptive: (Boolean) -> Unit,
+    onYoutubeLimit: (Int) -> Unit,
+    onOtherLimit: (Int) -> Unit,
+    onWifiOnly: (Boolean) -> Unit,
+    onChargingOnly: (Boolean) -> Unit,
+    onSchedule: (DownloadSchedule) -> Unit,
+    onBandwidth: (Int) -> Unit,
+    onRetries: (Int) -> Unit
+) {
+    val bandwidthValues = listOf(0, 512, 1_024, 2_048, 5_120, 10_240)
+    val bandwidthLabels = listOf("SIN LÍMITE", "512 K", "1 M", "2 M", "5 M", "10 M")
+
+    SectionLabel("AUTOMATIZACIÓN DE LA COLA")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Neon.copy(alpha = 0.4f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        blockReason?.let {
+            Text(
+                text = "EN ESPERA · $it",
+                style = MaterialTheme.typography.labelMedium,
+                color = VortexPalette.Amber,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(VortexPalette.GraphiteHigh, VortexShapes.small)
+                    .padding(9.dp)
+            )
+        }
+
+        PolicySwitchRow(
+            title = "AJUSTE INTELIGENTE",
+            description = "Reduce el paralelismo con poca batería, memoria o temperatura alta.",
+            checked = policy.adaptiveConcurrency,
+            onCheckedChange = onAdaptive
+        )
+        PolicySwitchRow(
+            title = "SÓLO WI-FI",
+            description = "Mantiene la cola en espera cuando estás usando datos móviles.",
+            checked = policy.wifiOnly,
+            onCheckedChange = onWifiOnly
+        )
+        PolicySwitchRow(
+            title = "SÓLO CARGANDO",
+            description = "Ideal para playlists grandes durante la noche.",
+            checked = policy.chargingOnly,
+            onCheckedChange = onChargingOnly
+        )
+
+        PolicyLabel("LÍMITE YOUTUBE · ${policy.youtubeLimit}")
+        PolicyChipRow(
+            labels = (1..5).map(Int::toString),
+            selectedIndex = (policy.youtubeLimit - 1).coerceIn(0, 4),
+            onSelect = { onYoutubeLimit(it + 1) }
+        )
+        PolicyLabel("OTRAS FUENTES · ${policy.otherLimit}")
+        PolicyChipRow(
+            labels = (1..10).map(Int::toString),
+            selectedIndex = (policy.otherLimit - 1).coerceIn(0, 9),
+            onSelect = { onOtherLimit(it + 1) }
+        )
+        PolicyLabel("HORARIO")
+        PolicyChipRow(
+            labels = DownloadSchedule.entries.map { it.label },
+            selectedIndex = DownloadSchedule.entries.indexOf(policy.schedule),
+            onSelect = { onSchedule(DownloadSchedule.entries[it]) }
+        )
+        PolicyLabel("VELOCIDAD TOTAL")
+        PolicyChipRow(
+            labels = bandwidthLabels,
+            selectedIndex = bandwidthValues.indexOf(policy.bandwidthLimitKbps).coerceAtLeast(0),
+            onSelect = { onBandwidth(bandwidthValues[it]) }
+        )
+        PolicyLabel("REINTENTOS AUTOMÁTICOS · ${policy.maxAutomaticRetries}")
+        PolicyChipRow(
+            labels = (0..5).map(Int::toString),
+            selectedIndex = policy.maxAutomaticRetries.coerceIn(0, 5),
+            onSelect = onRetries
+        )
+        Text(
+            text = "Los trabajos con fallos temporales conservan su archivo parcial y vuelven " +
+                "a intentarse con esperas crecientes.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 10.dp)
+        )
+    }
+}
+
+@Composable
+private fun PolicySwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = VortexPalette.TextMid)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = VortexPalette.TextLow)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = VortexPalette.Graphite,
+                checkedTrackColor = VortexPalette.Neon,
+                uncheckedThumbColor = VortexPalette.TextLow,
+                uncheckedTrackColor = VortexPalette.GraphiteHigh
+            )
+        )
+    }
+}
+
+@Composable
+private fun PolicyLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = VortexPalette.TextLow,
+        modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+    )
+}
+
+@Composable
+private fun PolicyChipRow(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        labels.forEachIndexed { index, label ->
+            Chip(label = label, selected = index == selectedIndex, onClick = { onSelect(index) })
+        }
     }
 }
 
@@ -1948,7 +2143,9 @@ private fun DownloadRow(
     isActive: Boolean,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onPrioritizeFirst: () -> Unit,
+    onPrioritizeLast: () -> Unit
 ) {
     val accent = when (job.status) {
         DownloadStatus.COMPLETED -> VortexPalette.Neon
@@ -1996,6 +2193,9 @@ private fun DownloadRow(
                             filled = true
                         )
                     }
+                    if (job.attemptCount > 0 && !job.status.isTerminal) {
+                        Badge(text = "INTENTO ${job.attemptCount + 1}")
+                    }
                 }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2013,31 +2213,66 @@ private fun DownloadRow(
                             color = VortexPalette.TextLow
                         )
                     }
+                    if (job.estimatedBytes > 0) {
+                        Text(
+                            text = "aprox. ${formatFileSize(job.estimatedBytes)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VortexPalette.TextLow
+                        )
+                    }
                 }
             }
 
-            when {
-                isActive -> IconButton(onClick = onCancel) {
-                    Icon(
-                        Icons.Filled.Stop,
-                        contentDescription = "Cancelar",
-                        tint = VortexPalette.Magenta
-                    )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (job.status == DownloadStatus.QUEUED && !isActive) {
+                    Row {
+                        IconButton(
+                            onClick = onPrioritizeFirst,
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.ArrowUpward,
+                                contentDescription = "Mover al inicio",
+                                tint = VortexPalette.Neon,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = onPrioritizeLast,
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.ArrowDownward,
+                                contentDescription = "Mover al final",
+                                tint = VortexPalette.TextLow,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
-                job.status == DownloadStatus.FAILED ||
-                    job.status == DownloadStatus.CANCELLED -> IconButton(onClick = onRetry) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = "Reintentar",
-                        tint = VortexPalette.Cyan
-                    )
-                }
-                else -> IconButton(onClick = onRemove) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "Quitar",
-                        tint = VortexPalette.TextLow
-                    )
+                when {
+                    isActive -> IconButton(onClick = onCancel) {
+                        Icon(
+                            Icons.Filled.Stop,
+                            contentDescription = "Cancelar",
+                            tint = VortexPalette.Magenta
+                        )
+                    }
+                    job.status == DownloadStatus.FAILED ||
+                        job.status == DownloadStatus.CANCELLED -> IconButton(onClick = onRetry) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = "Reintentar",
+                            tint = VortexPalette.Cyan
+                        )
+                    }
+                    else -> IconButton(onClick = onRemove) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Quitar",
+                            tint = VortexPalette.TextLow
+                        )
+                    }
                 }
             }
         }
@@ -2112,4 +2347,11 @@ private fun DownloadRow(
             )
         }
     }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_073_741_824L -> String.format("%.1f GB", bytes / 1_073_741_824.0)
+    bytes >= 1_048_576L -> String.format("%.0f MB", bytes / 1_048_576.0)
+    bytes >= 1_024L -> String.format("%.0f KB", bytes / 1_024.0)
+    else -> "$bytes B"
 }

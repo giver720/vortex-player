@@ -38,7 +38,11 @@ de reproducción **crean automáticamente su propia carpeta** con las pistas num
 elemento entra como trabajo independiente, así que un fallo no obliga a repetir la lista.
 El destino lo elige el usuario con el selector de carpetas del sistema. La cola puede
 ejecutar entre **1 y 10 descargas simultáneas**, elegidas con un deslizador o tocando el
-número; cada trabajo activo conserva progreso y cancelación propios.
+número; cada trabajo activo conserva progreso y cancelación propios. El motor inteligente
+puede reducir ese límite según batería, memoria y temperatura, aplicar cupos distintos a
+YouTube y otras fuentes, esperar Wi-Fi/cargador/horario y limitar el ancho de banda. Los
+fallos temporales se reintentan con espera progresiva conservando el archivo `.part`, y los
+trabajos pendientes se pueden mover al inicio o al final de la cola.
 
 **Enlaces de Spotify.** Pega una canción, un álbum o una lista y Vórtex lee **sólo los
 metadatos** del catálogo —título, artista, duración y portada—, busca cada tema en
@@ -112,6 +116,7 @@ imposible —VLC lo hace— pero es un proyecto en sí mismo.
 | `FOREGROUND_SERVICE_DATA_SYNC` | Que las descargas no se corten al salir de la app. |
 | `POST_NOTIFICATIONS` | Controles en la notificación y progreso de descarga. |
 | `INTERNET` | Streaming y descargas. |
+| `ACCESS_NETWORK_STATE` | Respetar el modo sólo Wi-Fi y esperar una conexión válida. |
 
 ## Compilar
 

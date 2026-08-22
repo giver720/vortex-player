@@ -16,9 +16,19 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE id = :id")
     suspend fun get(id: Long): DownloadEntity?
 
-    /** Siguiente trabajo pendiente, en orden de llegada. */
-    @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY createdAt ASC LIMIT 1")
-    suspend fun nextQueued(): DownloadEntity?
+    /** Candidatos listos; el coordinador aplica después el cupo de cada fuente. */
+    @Query(
+        """
+        SELECT * FROM downloads
+        WHERE status = 'QUEUED' AND nextAttemptAt <= :now
+        ORDER BY priority DESC, createdAt ASC
+        LIMIT 100
+        """
+    )
+    suspend fun eligibleQueued(now: Long): List<DownloadEntity>
+
+    @Query("SELECT MIN(nextAttemptAt) FROM downloads WHERE status = 'QUEUED' AND nextAttemptAt > :now")
+    suspend fun nextRetryAt(now: Long): Long?
 
     @Query("SELECT COUNT(*) FROM downloads WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED')")
     suspend fun activeCount(): Int
@@ -50,6 +60,21 @@ interface DownloadDao {
 
     @Query("UPDATE downloads SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: DownloadStatus)
+
+    @Query("UPDATE downloads SET priority = :priority WHERE id = :id")
+    suspend fun updatePriority(id: Long, priority: Int)
+
+    @Query("SELECT COALESCE(MAX(priority), 0) FROM downloads WHERE status = 'QUEUED'")
+    suspend fun maxQueuedPriority(): Int
+
+    @Query("SELECT COALESCE(MIN(priority), 0) FROM downloads WHERE status = 'QUEUED'")
+    suspend fun minQueuedPriority(): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM downloads " +
+            "WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED') AND url = :url"
+    )
+    suspend fun existingUrlCount(url: String): Int
 
     /**
      * Avance dentro de la lista. Va aparte de [updateProgress] porque cambia una vez por
@@ -96,8 +121,7 @@ interface DownloadDao {
     @Query(
         """
         UPDATE downloads
-        SET status = 'QUEUED', progress = 0, statusLine = '',
-            playlistIndex = 0, playlistCount = 0, playlistItems = ''
+        SET status = 'QUEUED', statusLine = 'Preparada para reanudar', nextAttemptAt = 0
         WHERE status IN ('FETCHING','DOWNLOADING','PROCESSING','MOVING')
         """
     )

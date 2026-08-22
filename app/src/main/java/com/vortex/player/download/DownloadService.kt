@@ -45,6 +45,7 @@ class DownloadService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var worker: Job? = null
     private val desiredParallelism = MutableStateFlow(DownloadConcurrency.DEFAULT)
+    private val desiredPolicy = MutableStateFlow(DownloadPolicy())
     private val activeProcesses = ConcurrentHashMap<Long, String>()
 
     private lateinit var repository: DownloadRepository
@@ -58,6 +59,11 @@ class DownloadService : Service() {
         scope.launch {
             EnginePreferences.concurrentDownloads(this@DownloadService).collect { value ->
                 desiredParallelism.value = DownloadConcurrency.clamp(value)
+            }
+        }
+        scope.launch {
+            EnginePreferences.downloadPolicy(this@DownloadService).collect { value ->
+                desiredPolicy.value = value
             }
         }
     }
@@ -107,16 +113,20 @@ class DownloadService : Service() {
             desiredParallelism.value = EnginePreferences.concurrentDownloads(
                 this@DownloadService
             ).first()
+            desiredPolicy.value = EnginePreferences.downloadPolicy(this@DownloadService).first()
             drainQueue()
             stopSelf()
         }
     }
 
     private suspend fun drainQueue() = supervisorScope {
-        val running = mutableMapOf<Long, Job>()
+        data class Running(val entity: DownloadEntity, val task: Job)
+        val running = mutableMapOf<Long, Running>()
+        var deviceSnapshot = DownloadDeviceConditions.snapshot(this@DownloadService)
+        var snapshotAt = 0L
 
         while (true) {
-            running.entries.removeAll { it.value.isCompleted }
+            running.entries.removeAll { it.value.task.isCompleted }
 
             if (queuePaused.value) {
                 // Si se reanuda antes de que terminen las activas, este mismo coordinador
@@ -126,8 +136,43 @@ class DownloadService : Service() {
                 continue
             }
 
-            while (running.size < desiredParallelism.value) {
-                val queued = repository.nextQueued() ?: break
+            if (running.isEmpty() &&
+                repository.eligibleQueued().isEmpty() &&
+                repository.nextRetryAt() == null
+            ) {
+                break
+            }
+
+            val now = System.currentTimeMillis()
+            if (now - snapshotAt >= DEVICE_SNAPSHOT_INTERVAL_MS) {
+                deviceSnapshot = DownloadDeviceConditions.snapshot(this@DownloadService)
+                snapshotAt = now
+            }
+            val policy = desiredPolicy.value
+            val blocked = DownloadDeviceConditions.blockReason(policy, deviceSnapshot)
+            blockReason.value = blocked
+            if (blocked != null) {
+                effectiveSlots.value = 0
+                if (running.isEmpty()) notify("Descargas en espera", blocked, 0f)
+                delay(CONDITION_TICK_MS)
+                continue
+            }
+
+            val effectiveLimit = DownloadDeviceConditions.adaptiveLimit(
+                desiredParallelism.value,
+                policy.adaptiveConcurrency,
+                deviceSnapshot
+            )
+            effectiveSlots.value = effectiveLimit
+
+            while (running.size < effectiveLimit) {
+                val sourceCounts = running.values.groupingBy {
+                    DownloadSource.from(it.entity)
+                }.eachCount()
+                val queued = repository.eligibleQueued().firstOrNull { candidate ->
+                    val source = DownloadSource.from(candidate)
+                    (sourceCounts[source] ?: 0) < policy.sourceLimit(source)
+                } ?: break
 
                 // La selección de la fila y su marcado ocurren en este único coordinador.
                 // Así dos ranuras nunca pueden reclamar el mismo trabajo de Room.
@@ -138,21 +183,36 @@ class DownloadService : Service() {
                     -1,
                     "Preparando descarga…"
                 )
-                running[queued.id] = launch { runJob(queued) }
+                val perJobRate = policy.bandwidthLimitKbps
+                    .takeIf { it > 0 }
+                    ?.div(effectiveLimit.coerceAtLeast(1))
+                    ?.coerceAtLeast(64)
+                    ?: 0
+                running[queued.id] = Running(
+                    entity = queued,
+                    task = launch { runJob(queued, perJobRate) }
+                )
             }
 
-            if (running.isEmpty() && repository.nextQueued() == null) break
+            if (running.isEmpty() && repository.eligibleQueued().isEmpty()) {
+                val retryAt = repository.nextRetryAt()
+                if (retryAt == null) break
+                delay((retryAt - System.currentTimeMillis()).coerceIn(500L, CONDITION_TICK_MS))
+                continue
+            }
             delay(COORDINATOR_TICK_MS)
         }
+        blockReason.value = null
+        effectiveSlots.value = 0
     }
 
-    private suspend fun runJob(job: DownloadEntity) {
+    private suspend fun runJob(job: DownloadEntity, rateLimitKbps: Int) {
         val processId = "vortex-${job.id}"
         activeProcesses[job.id] = processId
         publishActiveJobs()
 
         val workspace = DestinationStore.workspace(this, job.id)
-        workspace.deleteRecursively()
+        // Nunca se borra al empezar: los `.part` son precisamente el punto de reanudación.
         workspace.mkdirs()
 
         // Avance dentro de la lista, si el enlace resulta serlo. Se va leyendo de la salida
@@ -163,9 +223,10 @@ class DownloadService : Service() {
         // reescriben la fila entera a partir de la que se leyó al empezar: si estas tres
         // variables no llegaran hasta allí, el contador y la lista de pistas se borrarían
         // justo al terminar, que es cuando más se quieren ver.
-        var playlistIndex = 0
-        var playlistCount = 0
-        val playlistItems = mutableListOf<String>()
+        var playlistIndex = job.playlistIndex
+        var playlistCount = job.playlistCount
+        val playlistItems = job.playlistItems.lineSequence().filter { it.isNotBlank() }.toMutableList()
+        var latest = job
 
         // Las líneas de error que escupe yt-dlp. Traen el motivo de verdad —formato no
         // disponible, vídeo privado, bloqueo por sospecha de bot— y hasta ahora se
@@ -195,7 +256,10 @@ class DownloadService : Service() {
             // consultar metadatos sería gastar una llamada de red para saber lo que ya
             // sabemos —y encima la respondería el vídeo de YouTube, con peores datos.
             val named = if (spotify != null || (job.outputName != null && job.title.isNotBlank())) {
-                job.copy(status = DownloadStatus.DOWNLOADING)
+                job.copy(
+                    status = DownloadStatus.DOWNLOADING,
+                    estimatedBytes = DownloadEstimator.estimateBytes(job)
+                )
             } else {
                 repository.updateProgress(
                     job.id, DownloadStatus.FETCHING, 0f, -1, "Consultando fuente…"
@@ -209,12 +273,24 @@ class DownloadService : Service() {
                     title = summary?.title?.takeIf { it.isNotBlank() } ?: job.url,
                     uploader = summary?.uploader.orEmpty(),
                     thumbnailUrl = summary?.thumbnail,
-                    status = DownloadStatus.DOWNLOADING
+                    status = DownloadStatus.DOWNLOADING,
+                    estimatedBytes = DownloadEstimator.estimateBytes(
+                        job,
+                        (summary?.durationSeconds ?: 0) * 1_000
+                    )
                 )
             }
+            latest = named
             repository.update(named)
 
-            val request = with(repository) { job.toRequest() }
+            if (named.estimatedBytes > 0 && free < named.estimatedBytes + DestinationStore.MIN_FREE_BYTES) {
+                throw IllegalStateException(
+                    "Se estiman ${named.estimatedBytes / (1024 * 1024)} MB y sólo quedan " +
+                        "${free / (1024 * 1024)} MB con el margen de seguridad."
+                )
+            }
+
+            val request = with(repository) { named.toRequest() }
             var lastPersisted = -1f
             var lastPersistedAt = 0L
 
@@ -230,7 +306,8 @@ class DownloadService : Service() {
                 targetDurationMs = job.targetDurationMs,
                 outputName = job.outputName ?: spotify?.let {
                     SpotifyJobs.outputNameFrom(it.first, job.playlistFolder)
-                }
+                },
+                rateLimitKbps = rateLimitKbps
             ) { progress, eta, line ->
                 val clamped = (progress / 100f).coerceIn(0f, 1f)
                 val now = System.currentTimeMillis()
@@ -368,24 +445,58 @@ class DownloadService : Service() {
             )
             // La biblioteca se refresca sola para que lo recién bajado aparezca ya.
             MediaRepository.get(this).refresh()
+            workspace.deleteRecursively()
         } catch (e: Exception) {
             val cancelled = cancelledJobs.remove(job.id)
             // Lo que dijo el motor manda sobre el mensaje de la excepción: "exited with
             // code 1" no le sirve a nadie, y el motivo real ya venía escrito en la salida.
             val detail = engineErrors.joinToString(SEPARATOR).takeIf { it.isNotBlank() }
-            if (!cancelled) {
+            val message = detail ?: e.message ?: e.toString()
+            // Room contiene el último porcentaje persistido por el callback. Partir de esa
+            // fila evita que un error al 80 % vuelva a mostrar 0 % aunque el `.part` siga ahí.
+            val stored = repository.get(job.id) ?: latest
+            val nextAttempt = stored.attemptCount + 1
+            val policy = desiredPolicy.value
+            val retry = !cancelled &&
+                nextAttempt <= policy.maxAutomaticRetries &&
+                DownloadRetryPolicy.isRetryable(message)
+            val useFallback = retry &&
+                !stored.fallbackApplied &&
+                stored.kind == DownloadKind.VIDEO &&
+                DownloadRetryPolicy.isFormatFailure(message)
+
+            if (!cancelled && !retry) {
                 DownloadLog.record(
                     this,
-                    "Falló «${job.title.ifBlank { job.url }}»" +
+                    "Falló «${stored.title.ifBlank { stored.url }}»" +
                         detail?.let { SEPARATOR + it }.orEmpty(),
                     e
                 )
             }
             repository.update(
-                job.copy(
-                    status = if (cancelled) DownloadStatus.CANCELLED else DownloadStatus.FAILED,
-                    errorMessage = if (cancelled) null else detail ?: e.message ?: e.toString(),
-                    finishedAt = System.currentTimeMillis(),
+                stored.copy(
+                    status = when {
+                        cancelled -> DownloadStatus.CANCELLED
+                        retry -> DownloadStatus.QUEUED
+                        else -> DownloadStatus.FAILED
+                    },
+                    videoContainer = if (useFallback) VideoContainer.ORIGINAL else
+                        stored.videoContainer,
+                    fallbackApplied = stored.fallbackApplied || useFallback,
+                    attemptCount = if (cancelled) stored.attemptCount else nextAttempt,
+                    nextAttemptAt = if (retry) {
+                        System.currentTimeMillis() + DownloadRetryPolicy.delayMs(nextAttempt)
+                    } else {
+                        0
+                    },
+                    statusLine = if (retry) {
+                        "Reintento $nextAttempt/${policy.maxAutomaticRetries} programado" +
+                            if (useFallback) " · formato compatible" else ""
+                    } else {
+                        stored.statusLine
+                    },
+                    errorMessage = if (cancelled) null else message,
+                    finishedAt = if (retry) null else System.currentTimeMillis(),
                     // Se conserva por dónde iba: en una lista larga, saber que falló en la
                     // pista 31 de 40 es la mitad del diagnóstico.
                     playlistIndex = playlistIndex,
@@ -393,7 +504,9 @@ class DownloadService : Service() {
                     playlistItems = playlistItems.joinToString("\n")
                 )
             )
-            workspace.deleteRecursively()
+            // Cancelar significa descartar. En error se conserva el `.part` para que el
+            // reintento automático o manual continúe desde el último byte confirmado.
+            if (cancelled) workspace.deleteRecursively()
         } finally {
             activeProcesses.remove(job.id)
             publishActiveJobs()
@@ -484,6 +597,8 @@ class DownloadService : Service() {
         scope.cancel()
         activeProcesses.clear()
         publishActiveJobs()
+        blockReason.value = null
+        effectiveSlots.value = 0
         super.onDestroy()
     }
 
@@ -496,6 +611,8 @@ class DownloadService : Service() {
         private const val EXTRA_JOB_ID = "job_id"
         private const val NOTIFICATION_ID = 7781
         private const val COORDINATOR_TICK_MS = 200L
+        private const val CONDITION_TICK_MS = 15_000L
+        private const val DEVICE_SNAPSHOT_INTERVAL_MS = 5_000L
 
         @Volatile
         private var instance: DownloadService? = null
@@ -503,9 +620,13 @@ class DownloadService : Service() {
         private val cancelledJobs = ConcurrentHashMap.newKeySet<Long>()
         private val activeIds = MutableStateFlow<Set<Long>>(emptySet())
         private val paused = MutableStateFlow(false)
+        private val blockReason = MutableStateFlow<String?>(null)
+        private val effectiveSlots = MutableStateFlow(0)
 
         /** Trabajos que tienen un proceso yt-dlp propio en este momento. */
         val activeJobIds: StateFlow<Set<Long>> = activeIds.asStateFlow()
+        val policyBlockReason: StateFlow<String?> = blockReason.asStateFlow()
+        val effectiveConcurrency: StateFlow<Int> = effectiveSlots.asStateFlow()
 
         /**
          * Pausa cooperativa: la transferencia actual termina y no se inicia la siguiente.

@@ -22,8 +22,8 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.18.0"
+        versionCode = 25
+        versionName = "0.19.0"
     }
 
     signingConfigs {
