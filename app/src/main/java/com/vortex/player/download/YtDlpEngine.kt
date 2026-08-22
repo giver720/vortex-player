@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -110,6 +111,81 @@ object YtDlpEngine {
                 null
             }
         }
+
+    /**
+     * Lee una lista completa en modo plano. No resuelve formatos ni toca los medios, por
+     * lo que incluso una colección grande cuesta una sola ejecución ligera de yt-dlp.
+     * Cada elemento se convertirá después en un trabajo independiente de la cola.
+     */
+    suspend fun analyzePlaylist(url: String): PlaylistAnalysis? = withContext(Dispatchers.IO) {
+        try {
+            val request = YoutubeDLRequest(url).apply {
+                addOption("--flat-playlist")
+                addOption("--dump-single-json")
+                addOption("--skip-download")
+                addOption("--no-warnings")
+            }
+            val response = YoutubeDL.getInstance().execute(
+                request,
+                "vortex-analyze-${System.nanoTime()}"
+            )
+            val root = JSONObject(response.out.trim())
+            val rawEntries = root.optJSONArray("entries")
+            val entries = buildList {
+                if (rawEntries != null) {
+                    for (position in 0 until rawEntries.length()) {
+                        val item = rawEntries.optJSONObject(position) ?: continue
+                        parsePlaylistEntry(item, position + 1)?.let(::add)
+                    }
+                } else {
+                    parsePlaylistEntry(root, 1)?.let(::add)
+                }
+            }
+            if (entries.isEmpty()) return@withContext null
+            PlaylistAnalysis(
+                name = root.optString("title").ifBlank { entries.first().title },
+                uploader = root.optString("uploader").ifBlank {
+                    root.optString("channel")
+                },
+                coverUrl = root.optString("thumbnail").takeIf { it.isNotBlank() }
+                    ?: entries.firstNotNullOfOrNull { it.thumbnailUrl },
+                entries = entries,
+                isPlaylist = rawEntries != null
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo analizar la lista $url: ${e.message}")
+            null
+        }
+    }
+
+    private fun parsePlaylistEntry(json: JSONObject, fallbackIndex: Int): PlaylistEntry? {
+        val rawId = json.optString("id").takeIf { it.isNotBlank() }
+        val extractor = json.optString("extractor_key").ifBlank {
+            json.optString("extractor")
+        }
+        val rawUrl = json.optString("webpage_url").takeIf { it.startsWith("http") }
+            ?: json.optString("url").takeIf { it.startsWith("http") }
+            ?: if (rawId != null && extractor.contains("youtube", ignoreCase = true)) {
+                "https://www.youtube.com/watch?v=$rawId"
+            } else {
+                null
+            }
+        val title = json.optString("title").ifBlank { "Elemento $fallbackIndex" }
+        val sourceId = buildString {
+            append(extractor.ifBlank { "source" }.lowercase())
+            append(':')
+            append(rawId ?: rawUrl ?: return null)
+        }
+        return PlaylistEntry(
+            id = sourceId,
+            url = rawUrl ?: return null,
+            title = title,
+            uploader = json.optString("uploader").ifBlank { json.optString("channel") },
+            thumbnailUrl = json.optString("thumbnail").takeIf { it.isNotBlank() },
+            durationSeconds = json.optLong("duration").coerceAtLeast(0),
+            index = json.optInt("playlist_index", fallbackIndex).coerceAtLeast(1)
+        )
+    }
 
     /**
      * Ejecuta la descarga. [onProgress] recibe el porcentaje (0..100), los segundos

@@ -32,9 +32,11 @@ ventana propia por encima de cualquier app, que se arrastra con un dedo, se redi
 con dos y lleva dentro el interruptor de solo-audio.
 
 **Descargas con yt-dlp.** YouTube, Vimeo, Twitch, TikTok, Twitter y todo lo que soporte
-yt-dlp. Vídeo hasta 4K o extracción de audio a MP3/M4A/OPUS/FLAC/WAV. Las listas de
-reproducción **crean automáticamente su propia carpeta** con las pistas numeradas, y el
-destino lo elige el usuario con el selector de carpetas del sistema.
+yt-dlp. Busca por texto o pega un enlace, previsualiza listas con miniaturas y elige qué
+elementos bajar. Vídeo hasta 4K o extracción de audio a MP3/M4A/OPUS/FLAC/WAV. Las listas
+de reproducción **crean automáticamente su propia carpeta** con las pistas numeradas; cada
+elemento entra como trabajo independiente, así que un fallo no obliga a repetir la lista.
+El destino lo elige el usuario con el selector de carpetas del sistema.
 
 **Enlaces de Spotify.** Pega una canción, un álbum o una lista y Vórtex lee **sólo los
 metadatos** del catálogo —título, artista, duración y portada—, busca cada tema en
@@ -74,6 +76,7 @@ Descarga el APK de tu arquitectura desde [Releases](../../releases):
 |---|---|
 | `app-arm64-v8a-release.apk` | Prácticamente todos los móviles actuales |
 | `app-armeabi-v7a-release.apk` | Móviles antiguos de 32 bits |
+| `app-x86_64-release.apk` | Emuladores y algunos Chromebooks/dispositivos Intel |
 
 Se publica un APK por arquitectura porque libVLC y el intérprete de Python de yt-dlp pesan
 unas decenas de megas **por ABI**; un único APK universal rondaría los 250 MB.

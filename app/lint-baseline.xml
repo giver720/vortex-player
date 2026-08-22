@@ -1,0 +1,1532 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.7.3" type="baseline" client="gradle" dependencies="false" name="AGP (8.7.3)" variant="all" version="8.7.3">
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 28 (current min is 24): `android.media.audiofx.DynamicsProcessing#VARIANT_FAVOR_FREQUENCY_RESOLUTION`"
+        errorLine1="            DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioEnhancer.kt"
+            line="130"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 26 (current min is 24): `android.provider.Settings#ACTION_MANAGE_UNKNOWN_APP_SOURCES`"
+        errorLine1="            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/update/UpdateInstaller.kt"
+            line="31"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Implicit cast from `DynamicsProcessing` to `AudioEffect` requires API level 28 (current min is 24)"
+        errorLine1="        val controlled = hasControl(dynamics) || hasControl(legacyBass) ||"
+        errorLine2="                                    ~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioEnhancer.kt"
+            line="94"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 28 (current min is 24): `android.media.audiofx.DynamicsProcessing.Config.Builder()`"
+        errorLine1="        val config = DynamicsProcessing.Config.Builder("
+        errorLine2="                                               ~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioEnhancer.kt"
+            line="129"
+            column="48"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 28 (current min is 24): `android.media.audiofx.DynamicsProcessing.Config.Builder#build`"
+        errorLine1="        ).build()"
+        errorLine2="          ~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioEnhancer.kt"
+            line="139"
+            column="11"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 28 (current min is 24): `android.media.audiofx.DynamicsProcessing()`"
+        errorLine1="        val effect = DynamicsProcessing(0, session, config)"
+        errorLine2="                     ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioEnhancer.kt"
+            line="140"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 28 (current min is 24): `android.media.audiofx.DynamicsProcessing#getChannelCount`"
+        errorLine1="        channelCount = runCatching { effect.channelCount }.getOrDefault(REQUESTED_CHANNELS)"
+        errorLine2="                                            ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioEnhancer.kt"
+            line="146"
+            column="45"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 33 (current min is 31): `android.media.AudioManager#getAudioDevicesForAttributes`"
+        errorLine1="                runCatching { manager.getAudioDevicesForAttributes(attributes) }"
+        errorLine2="                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/audio/AudioOutput.kt"
+            line="71"
+            column="39"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 29 (current min is 24): `android.provider.MediaStore#AUTHORITY_URI`"
+        errorLine1="            MediaStore.AUTHORITY_URI, true, observer"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/data/MediaRepository.kt"
+            line="144"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="OldTargetApi"
+        message="Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the `android.os.Build.VERSION_CODES` javadoc for details."
+        errorLine1="        targetSdk = 35"
+        errorLine2="        ~~~~~~~~~~~~~~">
+        <location
+            file="build.gradle.kts"
+            line="24"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="AppLinkUrlError"
+        message="Missing URL"
+        errorLine1="            &lt;intent-filter android:priority=&quot;1&quot;>"
+        errorLine2="            ^">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="69"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="AppLinkUrlError"
+        message="Mime-type matching is case sensitive and should only use lower-case characters"
+        errorLine1="                &lt;data android:mimeType=&quot;application/x-mpegURL&quot; />"
+        errorLine2="                                        ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="75"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="PictureInPictureIssue"
+        message="An activity in this app supports picture-in-picture and the targetSdkVersion is 31 or above; it is therefore strongly recommended to call both `setAutoEnterEnabled(true)` and `setSourceRectHint(...)`"
+        errorLine1="    &lt;application"
+        errorLine2="     ~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="36"
+            column="6"/>
+    </issue>
+
+    <issue
+        id="SelectedPhotoAccess"
+        message="Your app is currently not handling Selected Photos Access introduced in Android 14+"
+        errorLine1="    &lt;uses-permission android:name=&quot;android.permission.READ_MEDIA_VIDEO&quot; />"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="6"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="AndroidGradlePluginVersion"
+        message="A newer version of com.android.application than 8.7.3 is available: 9.3.1"
+        errorLine1="agp = &quot;8.7.3&quot;"
+        errorLine2="      ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="2"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="AndroidGradlePluginVersion"
+        message="A newer version of com.android.application than 8.7.3 is available: 9.3.1"
+        errorLine1="agp = &quot;8.7.3&quot;"
+        errorLine2="      ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="2"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="AndroidGradlePluginVersion"
+        message="A newer version of com.android.application than 8.7.3 is available: 9.3.1"
+        errorLine1="agp = &quot;8.7.3&quot;"
+        errorLine2="      ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="2"
+            column="7"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-ktx than 1.15.0 is available: 1.19.0"
+        errorLine1="coreKtx = &quot;1.15.0&quot;"
+        errorLine2="          ~~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="5"
+            column="11"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-ktx than 1.15.0 is available: 1.19.0"
+        errorLine1="coreKtx = &quot;1.15.0&quot;"
+        errorLine2="          ~~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="5"
+            column="11"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-ktx than 1.15.0 is available: 1.19.0"
+        errorLine1="coreKtx = &quot;1.15.0&quot;"
+        errorLine2="          ~~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="5"
+            column="11"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-runtime-ktx than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.7 is available: 2.11.0"
+        errorLine1="lifecycle = &quot;2.8.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.activity:activity-compose than 1.9.3 is available: 1.13.0"
+        errorLine1="activityCompose = &quot;1.9.3&quot;"
+        errorLine2="                  ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="7"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.activity:activity-compose than 1.9.3 is available: 1.13.0"
+        errorLine1="activityCompose = &quot;1.9.3&quot;"
+        errorLine2="                  ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="7"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.activity:activity-compose than 1.9.3 is available: 1.13.0"
+        errorLine1="activityCompose = &quot;1.9.3&quot;"
+        errorLine2="                  ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="7"
+            column="19"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.compose:compose-bom than 2024.12.01 is available: 2026.08.00"
+        errorLine1="composeBom = &quot;2024.12.01&quot;"
+        errorLine2="             ~~~~~~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="8"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.compose:compose-bom than 2024.12.01 is available: 2026.08.00"
+        errorLine1="composeBom = &quot;2024.12.01&quot;"
+        errorLine2="             ~~~~~~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="8"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.compose:compose-bom than 2024.12.01 is available: 2026.08.00"
+        errorLine1="composeBom = &quot;2024.12.01&quot;"
+        errorLine2="             ~~~~~~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="8"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-common than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-common than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-common than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer-dash than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer-dash than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer-dash than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer-hls than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer-hls than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-exoplayer-hls than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-session than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-session than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-session than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-ui than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-ui than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.media3:media3-ui than 1.5.1 is available: 1.11.0"
+        errorLine1="media3 = &quot;1.5.1&quot;"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="9"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-compiler than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-compiler than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-compiler than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-ktx than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-ktx than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-ktx than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-runtime than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-runtime than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.room:room-runtime than 2.6.1 is available: 2.8.4"
+        errorLine1="room = &quot;2.6.1&quot;"
+        errorLine2="       ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="10"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.navigation:navigation-compose than 2.8.5 is available: 2.9.8"
+        errorLine1="navigation = &quot;2.8.5&quot;"
+        errorLine2="             ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="13"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.navigation:navigation-compose than 2.8.5 is available: 2.9.8"
+        errorLine1="navigation = &quot;2.8.5&quot;"
+        errorLine2="             ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="13"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.navigation:navigation-compose than 2.8.5 is available: 2.9.8"
+        errorLine1="navigation = &quot;2.8.5&quot;"
+        errorLine2="             ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="13"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.datastore:datastore-preferences than 1.1.1 is available: 1.2.1"
+        errorLine1="datastore = &quot;1.1.1&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="14"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.datastore:datastore-preferences than 1.1.1 is available: 1.2.1"
+        errorLine1="datastore = &quot;1.1.1&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="14"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.datastore:datastore-preferences than 1.1.1 is available: 1.2.1"
+        errorLine1="datastore = &quot;1.1.1&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="14"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.documentfile:documentfile than 1.0.1 is available: 1.1.0"
+        errorLine1="documentfile = &quot;1.0.1&quot;"
+        errorLine2="               ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="17"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.documentfile:documentfile than 1.0.1 is available: 1.1.0"
+        errorLine1="documentfile = &quot;1.0.1&quot;"
+        errorLine2="               ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="17"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.documentfile:documentfile than 1.0.1 is available: 1.1.0"
+        errorLine1="documentfile = &quot;1.0.1&quot;"
+        errorLine2="               ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="17"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-splashscreen than 1.0.1 is available: 1.2.0"
+        errorLine1="splashscreen = &quot;1.0.1&quot;"
+        errorLine2="               ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="18"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-splashscreen than 1.0.1 is available: 1.2.0"
+        errorLine1="splashscreen = &quot;1.0.1&quot;"
+        errorLine2="               ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="18"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.core:core-splashscreen than 1.0.1 is available: 1.2.0"
+        errorLine1="splashscreen = &quot;1.0.1&quot;"
+        errorLine2="               ~~~~~~~">
+        <location
+            file="../gradle/libs.versions.toml"
+            line="18"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        PlaybackService.play(getApplication(), entries, 0)"
+        errorLine2="        ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/LibraryViewModel.kt"
+            line="205"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        PlaybackService.play(getApplication(), entries, 0)"
+        errorLine2="                        ~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/LibraryViewModel.kt"
+            line="205"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        PlaybackService.play("
+        errorLine2="        ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/LibraryViewModel.kt"
+            line="293"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        PlaybackService.play("
+        errorLine2="                        ~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/LibraryViewModel.kt"
+            line="293"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    IconButton(onClick = { PlaybackService.setAudioOnly(!audioOnly) }) {"
+        errorLine2="                                           ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/NowPlayingDock.kt"
+            line="150"
+            column="44"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    IconButton(onClick = { PlaybackService.setAudioOnly(!audioOnly) }) {"
+        errorLine2="                                                           ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/NowPlayingDock.kt"
+            line="150"
+            column="60"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                IconButton(onClick = { PlaybackService.togglePlayPause(context) }) {"
+        errorLine2="                                       ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/NowPlayingDock.kt"
+            line="166"
+            column="40"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                IconButton(onClick = { PlaybackService.togglePlayPause(context) }) {"
+        errorLine2="                                                       ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/NowPlayingDock.kt"
+            line="166"
+            column="56"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        PlaybackService.play("
+        errorLine2="        ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerActivity.kt"
+            line="65"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        PlaybackService.play("
+        errorLine2="                        ~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerActivity.kt"
+            line="65"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onPlayPause = { PlaybackService.togglePlayPause(context) },"
+        errorLine2="                                    ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="234"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onPlayPause = { PlaybackService.togglePlayPause(context) },"
+        errorLine2="                                                    ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="234"
+            column="53"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onCycleRepeat = { PlaybackService.cycleRepeat() },"
+        errorLine2="                                      ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="243"
+            column="39"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onCycleRepeat = { PlaybackService.cycleRepeat() },"
+        errorLine2="                                                      ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="243"
+            column="55"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onToggleShuffle = { PlaybackService.toggleShuffle() },"
+        errorLine2="                                        ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="244"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onToggleShuffle = { PlaybackService.toggleShuffle() },"
+        errorLine2="                                                        ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="244"
+            column="57"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onToggleAudioOnly = { PlaybackService.setAudioOnly(!audioOnly) },"
+        errorLine2="                                          ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="245"
+            column="43"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    onToggleAudioOnly = { PlaybackService.setAudioOnly(!audioOnly) },"
+        errorLine2="                                                          ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="245"
+            column="59"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    PlaybackService.setSleepTimer(minutes?.let { it * 60_000L })"
+        errorLine2="                    ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="263"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                    PlaybackService.setSleepTimer(minutes?.let { it * 60_000L })"
+        errorLine2="                                    ~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="263"
+            column="37"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="@OptIn(UnstableApi::class)"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="293"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        factory = { ctx -> AspectRatioFrameLayout(ctx) },"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="319"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        update = { view ->"
+        errorLine2="                   ~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="320"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            view.setAspectRatio(preset.forcedRatio ?: videoAspect)"
+        errorLine2="                 ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="326"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="            view.resizeMode = when (preset) {"
+        errorLine2="                 ~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="327"
+            column="18"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                AspectPreset.CROP -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM"
+        errorLine2="                                                            ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="328"
+            column="61"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                AspectPreset.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL"
+        errorLine2="                                                               ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="329"
+            column="64"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                else -> AspectRatioFrameLayout.RESIZE_MODE_FIT"
+        errorLine2="                                               ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="330"
+            column="48"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                                detectTapGestures { PlaybackService.togglePlayPause(context) }"
+        errorLine2="                                                    ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="140"
+            column="53"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                                detectTapGestures { PlaybackService.togglePlayPause(context) }"
+        errorLine2="                                                                    ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="140"
+            column="69"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                            onClick = { PlaybackService.setAudioOnly(!audioOnly) }"
+        errorLine2="                                        ~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="162"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="                            onClick = { PlaybackService.setAudioOnly(!audioOnly) }"
+        errorLine2="                                                        ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="162"
+            column="57"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="@OptIn(UnstableApi::class)"
+        errorLine2="       ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="201"
+            column="8"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="    var container by remember { mutableStateOf&lt;AspectRatioFrameLayout?>(null) }"
+        errorLine2="        ~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="205"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        factory = { ctx -> AspectRatioFrameLayout(ctx).also { container = it } },"
+        errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="213"
+            column="28"/>
+    </issue>
+
+    <issue
+        id="UnsafeOptInUsageError"
+        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
+        errorLine1="        update = { it.setAspectRatio(videoAspect) },"
+        errorLine2="                      ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupWindowContent.kt"
+            line="214"
+            column="23"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/MediaCard.kt"
+            line="61"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/library/MediaRow.kt"
+            line="56"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ExportedService"
+        message="Exported service does not require permission"
+        errorLine1="        &lt;service"
+        errorLine2="         ~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="88"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; SDK_INT is never &lt; 24"
+        errorLine1="            Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.M || Settings.canDrawOverlays(context)"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/popup/PopupService.kt"
+            line="193"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="ObsoleteSdkInt"
+        message="Unnecessary; SDK_INT is always >= 23"
+        errorLine1="        &lt;item name=&quot;android:windowLightStatusBar&quot; tools:targetApi=&quot;23&quot;>false&lt;/item>"
+        errorLine2="                                                  ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/themes.xml"
+            line="8"
+            column="51"/>
+    </issue>
+
+    <issue
+        id="StaticFieldLeak"
+        message="Do not place Android context classes in static fields (static reference to `MediaRepository` which has field `context` pointing to `Context`); this is a memory leak"
+        errorLine1="        @Volatile"
+        errorLine2="        ^">
+        <location
+            file="src/main/java/com/vortex/player/data/MediaRepository.kt"
+            line="270"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var visibleLimit by remember(queueFilter, queueQuery) { mutableStateOf(QUEUE_PAGE_SIZE) }"
+        errorLine2="                                                            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/downloads/DownloadsScreen.kt"
+            line="209"
+            column="61"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
+        errorLine1="    var draggingBand by remember { mutableStateOf(-1) }"
+        errorLine2="                                   ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/settings/EqualizerCurve.kt"
+            line="57"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var userZoom by remember { mutableStateOf(1f) }"
+        errorLine2="                               ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="117"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var horizontalAccum by remember { mutableStateOf(0f) }"
+        errorLine2="                                      ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/ui/player/PlayerScreen.kt"
+            line="391"
+            column="39"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.vortex_graphite_raised` appears to be unused"
+        errorLine1="    &lt;color name=&quot;vortex_graphite_raised&quot;>#141A18&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="4"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.vortex_neon` appears to be unused"
+        errorLine1="    &lt;color name=&quot;vortex_neon&quot;>#39FF7A&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="5"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.vortex_neon_dim` appears to be unused"
+        errorLine1="    &lt;color name=&quot;vortex_neon_dim&quot;>#1F8C46&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="6"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.color.vortex_cyan` appears to be unused"
+        errorLine1="    &lt;color name=&quot;vortex_cyan&quot;>#24E0C8&lt;/color>"
+        errorLine2="           ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/colors.xml"
+            line="7"
+            column="12"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.nav_library` appears to be unused"
+        errorLine1="    &lt;string name=&quot;nav_library&quot;>Biblioteca&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="5"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.nav_folders` appears to be unused"
+        errorLine1="    &lt;string name=&quot;nav_folders&quot;>Carpetas&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="6"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.nav_recent` appears to be unused"
+        errorLine1="    &lt;string name=&quot;nav_recent&quot;>Reciente&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="7"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.nav_settings` appears to be unused"
+        errorLine1="    &lt;string name=&quot;nav_settings&quot;>Ajustes&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="8"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.perm_title` appears to be unused"
+        errorLine1="    &lt;string name=&quot;perm_title&quot;>Vórtex necesita ver tus medios&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="10"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.perm_body` appears to be unused"
+        errorLine1="    &lt;string name=&quot;perm_body&quot;>Para construir tu biblioteca hace falta acceso a los vídeos y audios del dispositivo. Nada sale del teléfono.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="11"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.perm_grant` appears to be unused"
+        errorLine1="    &lt;string name=&quot;perm_grant&quot;>Conceder acceso&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="12"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.empty_library_title` appears to be unused"
+        errorLine1="    &lt;string name=&quot;empty_library_title&quot;>Sin medios todavía&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="14"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.empty_library_body` appears to be unused"
+        errorLine1="    &lt;string name=&quot;empty_library_body&quot;>No se encontraron vídeos ni audios. Cuando descargues o grabes algo, aparecerá aquí.&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="15"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.audio_only_on` appears to be unused"
+        errorLine1="    &lt;string name=&quot;audio_only_on&quot;>Modo solo audio activado&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="21"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.audio_only_off` appears to be unused"
+        errorLine1="    &lt;string name=&quot;audio_only_off&quot;>Vídeo restaurado&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="22"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UsableSpace"
+        message="Consider also using `StorageManager#getAllocatableBytes` and `allocateBytes` which will consider clearable cached data"
+        errorLine1="            (context.getExternalFilesDir(null) ?: context.filesDir).usableSpace"
+        errorLine2="                                                                    ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/download/DestinationStore.kt"
+            line="146"
+            column="69"/>
+    </issue>
+
+    <issue
+        id="ConstantLocale"
+        message="Assigning `Locale.getDefault()` to a final static field is suspicious; this code will not work correctly if the user changes locale while the app is running"
+        errorLine1="    private val stamp = SimpleDateFormat(&quot;dd/MM HH:mm:ss&quot;, Locale.getDefault())"
+        errorLine2="                                                           ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/vortex/player/download/DownloadLog.kt"
+            line="30"
+            column="60"/>
+    </issue>
+
+</issues>

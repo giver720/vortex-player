@@ -1,0 +1,7 @@
+Nuevo centro de descargas y playlists resistentes.
+
+• Busca vídeos por texto o pega enlaces de YouTube, Spotify y otras fuentes.
+• Previsualiza playlists con miniaturas y elige todas, ninguna o sólo las que faltan.
+• Cada elemento se descarga y reintenta por separado, conservando carpeta y numeración.
+• Panel global con progreso, pausa de cola, filtros, búsqueda e historial paginado.
+• Listas grandes de Spotify se insertan en bloque y la base de datos mantiene rápida la cola.

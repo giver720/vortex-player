@@ -22,8 +22,8 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.15.1"
+        versionCode = 22
+        versionName = "0.16.0"
     }
 
     signingConfigs {
@@ -88,6 +88,12 @@ android {
             // en disco, no mapeados desde el APK comprimido.
             useLegacyPackaging = true
         }
+    }
+
+    // La deuda histórica detectada al introducir lint en 0.16.0 queda registrada en un
+    // baseline. Los problemas nuevos sí vuelven a romper la build de release.
+    lint {
+        baseline = file("lint-baseline.xml")
     }
 }
 

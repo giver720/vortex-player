@@ -26,6 +26,10 @@ interface DownloadDao {
     @Insert
     suspend fun insert(entity: DownloadEntity): Long
 
+    /** Una inserción Room para toda la lista evita una transacción de disco por pista. */
+    @Insert
+    suspend fun insertAll(entities: List<DownloadEntity>): List<Long>
+
     @Update
     suspend fun update(entity: DownloadEntity)
 

@@ -16,7 +16,7 @@ No es el picture-in-picture del sistema, aunque también está. Es una ventana p
 
 <b>Descargas con yt-dlp</b>
 
-YouTube, Vimeo, Twitch, TikTok, Twitter y todo lo demás que soporte yt-dlp. Vídeo hasta 4K, o audio extraído a MP3, M4A, OPUS, FLAC o WAV. Las listas de reproducción crean automáticamente su propia carpeta con las pistas numeradas, y eliges la carpeta de destino con el selector del sistema.
+YouTube, Vimeo, Twitch, TikTok, Twitter y todo lo demás que soporte yt-dlp. Busca por texto o pega un enlace, previsualiza listas con miniaturas y elige qué bajar. Vídeo hasta 4K, o audio extraído a MP3, M4A, OPUS, FLAC o WAV. Cada elemento de una lista tiene progreso y reintento propios, y la colección conserva su carpeta y numeración.
 
 <b>Relación de aspecto, al estilo VLC</b>
 

@@ -1,0 +1,7 @@
+New download hub and resilient playlists.
+
+• Search videos by text or paste links from YouTube, Spotify, and other sources.
+• Preview playlists with thumbnails and select all, none, or only missing items.
+• Every item downloads and retries independently while keeping folder and numbering.
+• Global progress, queue pause, filters, search, and paginated history.
+• Large Spotify lists use batch inserts and new database indexes keep the queue fast.

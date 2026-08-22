@@ -27,7 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.ContentPaste
@@ -38,8 +38,11 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
@@ -88,6 +91,14 @@ import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 
+private enum class QueueFilter(val label: String) {
+    ACTIVE("EN CURSO"),
+    COMPLETED("HECHAS"),
+    FAILED("ERRORES")
+}
+
+private const val QUEUE_PAGE_SIZE = 100
+
 /**
  * Centro de descargas. La composición vertical sigue el orden real de la decisión:
  * primero el enlace, luego qué formato quieres, luego dónde va, y por último la cola.
@@ -114,6 +125,7 @@ fun DownloadsScreen(
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
     val activeJobId by viewModel.activeJobId.collectAsStateWithLifecycle()
+    val queuePaused by viewModel.queuePaused.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val engineReady by viewModel.engineReady.collectAsStateWithLifecycle()
     val isSpotify by viewModel.isSpotifyLink.collectAsStateWithLifecycle()
@@ -122,6 +134,7 @@ fun DownloadsScreen(
     val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
     val sponsorSettings by viewModel.sponsor.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val sourceSelection by viewModel.sourceSelection.collectAsStateWithLifecycle()
     val engineVersion by viewModel.engineVersion.collectAsStateWithLifecycle()
     val updatingEngine by viewModel.updatingEngine.collectAsStateWithLifecycle()
     val autoUpdateEngine by viewModel.autoUpdateEngine.collectAsStateWithLifecycle()
@@ -142,6 +155,20 @@ fun DownloadsScreen(
         return
     }
 
+
+    sourceSelection?.let { pending ->
+        BackHandler { viewModel.cancelSourceSelection() }
+        PlaylistSelectionScreen(
+            selection = pending,
+            onToggle = viewModel::toggleSourceEntry,
+            onSelectAll = viewModel::selectAllSourceEntries,
+            onOnlyMissing = viewModel::selectOnlyMissingSourceEntries,
+            onConfirm = viewModel::confirmSourceSelection,
+            onCancel = viewModel::cancelSourceSelection
+        )
+        return
+    }
+
     var confirmClearAll by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
 
@@ -149,11 +176,38 @@ fun DownloadsScreen(
     // mientras que la cola se mira constantemente: tenerlos siempre desplegados empujaba
     // lo que de verdad se consulta al fondo de la pantalla.
     var optionsExpanded by remember { mutableStateOf(false) }
-    var showDone by remember { mutableStateOf(false) }
+    var queueFilter by remember { mutableStateOf(QueueFilter.ACTIVE) }
+    var queueQuery by remember { mutableStateOf("") }
 
     val pending = remember(downloads) { downloads.filter { !it.status.isTerminal } }
-    val finished = remember(downloads) { downloads.filter { it.status.isTerminal } }
-    val visible = if (showDone) finished else pending
+    val completed = remember(downloads) {
+        downloads.filter { it.status == DownloadStatus.COMPLETED }
+    }
+    val failed = remember(downloads) {
+        downloads.filter {
+            it.status == DownloadStatus.FAILED || it.status == DownloadStatus.CANCELLED
+        }
+    }
+    val sectionJobs = when (queueFilter) {
+        QueueFilter.ACTIVE -> pending
+        QueueFilter.COMPLETED -> completed
+        QueueFilter.FAILED -> failed
+    }
+    val filteredJobs = remember(sectionJobs, queueQuery) {
+        val term = queueQuery.trim()
+        if (term.isBlank()) {
+            sectionJobs
+        } else {
+            sectionJobs.filter { job ->
+                job.title.contains(term, ignoreCase = true) ||
+                    job.uploader.contains(term, ignoreCase = true) ||
+                    job.playlistFolder?.contains(term, ignoreCase = true) == true ||
+                    job.errorMessage?.contains(term, ignoreCase = true) == true
+            }
+        }
+    }
+    var visibleLimit by remember(queueFilter, queueQuery) { mutableStateOf(QUEUE_PAGE_SIZE) }
+    val visible = filteredJobs.take(visibleLimit)
 
     val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, thumbnail, metadata, sponsorSettings) {
         buildList {
@@ -197,7 +251,7 @@ fun DownloadsScreen(
                 ) {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Filled.ArrowBack,
+                            Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver",
                             tint = VortexPalette.TextHigh
                         )
@@ -225,6 +279,7 @@ fun DownloadsScreen(
             item {
                 UrlField(
                     url = url,
+                    busy = resolving,
                     onUrlChange = viewModel::setUrl,
                     onPaste = {
                         clipboard.getText()?.text?.let(viewModel::setUrl)
@@ -239,6 +294,8 @@ fun DownloadsScreen(
 
             if (isSpotify) {
                 item { SpotifyNotice(resolving) }
+            } else if (resolving) {
+                item { PlaylistAnalysisNotice() }
             }
 
             item {
@@ -434,6 +491,17 @@ fun DownloadsScreen(
                 }
             }
 
+            if (downloads.isNotEmpty()) {
+                item {
+                    QueueOverviewCard(
+                        jobs = downloads,
+                        activeJobId = activeJobId,
+                        paused = queuePaused,
+                        onTogglePause = viewModel::toggleQueuePaused
+                    )
+                }
+            }
+
             item {
                 Row(
                     modifier = Modifier
@@ -441,21 +509,19 @@ fun DownloadsScreen(
                         .padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Lo activo y el historial compartían lista, así que una descarga nueva
-                    // aparecía entre decenas de entradas viejas.
-                    QueueTab(
-                        label = "EN CURSO",
-                        count = pending.size,
-                        selected = !showDone,
-                        onClick = { showDone = false }
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    QueueTab(
-                        label = "HECHAS",
-                        count = finished.size,
-                        selected = showDone,
-                        onClick = { showDone = true }
-                    )
+                    QueueFilter.entries.forEachIndexed { index, filter ->
+                        if (index > 0) Spacer(Modifier.width(12.dp))
+                        QueueTab(
+                            label = filter.label,
+                            count = when (filter) {
+                                QueueFilter.ACTIVE -> pending.size
+                                QueueFilter.COMPLETED -> completed.size
+                                QueueFilter.FAILED -> failed.size
+                            },
+                            selected = queueFilter == filter,
+                            onClick = { queueFilter = filter }
+                        )
+                    }
                     Spacer(Modifier.weight(1f))
                     // El menú va siempre, aunque no haya nada en la cola: si sólo
                     // apareciera con descargas, el registro quedaría inalcanzable justo
@@ -469,6 +535,16 @@ fun DownloadsScreen(
                             onCancelPending = viewModel::cancelPending,
                             onClearFinished = viewModel::clearFinished,
                             onClearAll = { confirmClearAll = true }
+                    )
+                }
+            }
+
+            if (sectionJobs.size > 8 || queueQuery.isNotBlank()) {
+                item {
+                    QueueSearchField(
+                        value = queueQuery,
+                        resultCount = filteredJobs.size,
+                        onValueChange = { queueQuery = it }
                     )
                 }
             }
@@ -487,17 +563,34 @@ fun DownloadsScreen(
                 item {
                     Text(
                         text = when {
-                            showDone -> "Aún no has terminado ninguna descarga."
-                            // Sin este aviso, terminar la última descarga vacía la pestaña
-                            // y parece que lo bajado se ha esfumado.
-                            finished.isNotEmpty() ->
+                            queueQuery.isNotBlank() -> "No hay resultados para “$queueQuery”."
+                            queueFilter == QueueFilter.COMPLETED ->
+                                "Aún no has terminado ninguna descarga."
+                            queueFilter == QueueFilter.FAILED ->
+                                "No hay descargas con error."
+                            completed.isNotEmpty() ->
                                 "No queda nada descargando. Lo ya bajado está en HECHAS."
-                            else -> "Nada en la cola. Pega un enlace de YouTube, Vimeo, " +
-                                "Twitter, Twitch, TikTok o cualquier otra fuente compatible."
+                            else -> "Nada en la cola. Busca un vídeo o pega un enlace de " +
+                                "YouTube, Spotify, Vimeo, Twitch, TikTok u otra fuente."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = VortexPalette.TextLow,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 18.dp)
+                    )
+                }
+            }
+
+
+            if (visible.size < filteredJobs.size) {
+                item {
+                    Text(
+                        text = "MOSTRAR ${minOf(QUEUE_PAGE_SIZE, filteredJobs.size - visible.size)} MÁS",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = VortexPalette.Cyan,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { visibleLimit += QUEUE_PAGE_SIZE }
+                            .padding(horizontal = 14.dp, vertical = 16.dp)
                     )
                 }
             }
@@ -845,6 +938,31 @@ private fun SpotifyNotice(resolving: Boolean) {
     }
 }
 
+@Composable
+private fun PlaylistAnalysisNotice() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Neon.copy(alpha = 0.4f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "LEYENDO PLAYLIST…",
+            style = MaterialTheme.typography.labelMedium,
+            color = VortexPalette.Neon
+        )
+        Text(
+            text = "Cargando títulos y miniaturas sin descargar los vídeos. Después podrás " +
+                "elegir elementos; cada uno tendrá progreso y reintento independiente.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextMid,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
 /**
  * La lista se quedó en 100. Es importante decirlo: si no, el usuario cree que su
  * playlist de trescientas se bajó entera y descubre el hueco semanas después.
@@ -904,57 +1022,109 @@ private fun EngineBanner(engineReady: Boolean?) {
 @Composable
 private fun UrlField(
     url: String,
+    busy: Boolean,
     onUrlChange: (String) -> Unit,
     onPaste: () -> Unit,
     onEnqueue: () -> Unit
 ) {
-    Row(
+    val isLink = url.startsWith("http", ignoreCase = true) ||
+        url.startsWith("spotify:", ignoreCase = true)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Box(
-            Modifier
-                .weight(1f)
-                .background(VortexPalette.GraphiteRaised, VortexShapes.small)
-                .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
-                .padding(horizontal = 12.dp, vertical = 12.dp)
-        ) {
-            if (url.isEmpty()) {
-                Text(
-                    text = "https://…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VortexPalette.TextLow
-                )
-            }
-            BasicTextField(
-                value = url,
-                onValueChange = onUrlChange,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = VortexPalette.TextHigh
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(
+                Brush.linearGradient(
+                    listOf(VortexPalette.GraphiteRaised, VortexPalette.GraphiteHigh)
                 ),
-                cursorBrush = SolidColor(VortexPalette.Neon),
-                modifier = Modifier.fillMaxWidth()
+                VortexShapes.large
             )
-        }
-        IconButton(onClick = onPaste) {
-            Icon(
-                Icons.Filled.ContentPaste,
-                contentDescription = "Pegar",
-                tint = VortexPalette.TextMid
+            .border(
+                0.5.dp,
+                if (url.isBlank()) VortexPalette.Outline else VortexPalette.Neon.copy(alpha = 0.5f),
+                VortexShapes.large
+            )
+            .padding(13.dp)
+    ) {
+        Text(
+            text = "BUSCA O PEGA UN ENLACE",
+            style = MaterialTheme.typography.labelMedium,
+            color = VortexPalette.Neon
+        )
+        Text(
+            text = "Vídeos, música y playlists completas en un solo lugar",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 3.dp, bottom = 10.dp)
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(VortexPalette.Graphite, VortexShapes.small)
+                    .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+                    .padding(start = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = VortexPalette.TextLow,
+                    modifier = Modifier.size(18.dp)
+                )
+                Box(Modifier.weight(1f).padding(horizontal = 9.dp, vertical = 12.dp)) {
+                    if (url.isEmpty()) {
+                        Text(
+                            text = "Artista, canción o https://…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = VortexPalette.TextLow
+                        )
+                    }
+                    BasicTextField(
+                        value = url,
+                        onValueChange = onUrlChange,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = VortexPalette.TextHigh
+                        ),
+                        cursorBrush = SolidColor(VortexPalette.Neon),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                IconButton(onClick = onPaste) {
+                    Icon(
+                        Icons.Filled.ContentPaste,
+                        contentDescription = "Pegar",
+                        tint = VortexPalette.TextMid,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Text(
+                text = when {
+                    busy -> "LEYENDO…"
+                    isLink -> "ANALIZAR"
+                    else -> "BUSCAR"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                color = if (busy) VortexPalette.TextLow else VortexPalette.Graphite,
+                modifier = Modifier
+                    .background(
+                        if (busy) VortexPalette.GraphiteHigh else VortexPalette.Neon,
+                        VortexShapes.small
+                    )
+                    .clickable(enabled = !busy, onClick = onEnqueue)
+                    .padding(horizontal = 13.dp, vertical = 13.dp)
             )
         }
         Text(
-            text = "BAJAR",
-            style = MaterialTheme.typography.labelLarge,
-            color = VortexPalette.Graphite,
-            modifier = Modifier
-                .background(VortexPalette.Neon, VortexShapes.small)
-                .clickable(onClick = onEnqueue)
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+            text = "YOUTUBE  ·  SPOTIFY  ·  TIKTOK  ·  VIMEO  ·  TWITCH  ·  MÁS SITIOS",
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 10.dp)
         )
     }
 }
@@ -1007,6 +1177,198 @@ private fun OptionsSummaryBar(
             contentDescription = if (expanded) "Plegar ajustes" else "Desplegar ajustes",
             tint = VortexPalette.TextLow,
             modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/** Cabecera compacta de la cola: estado actual, avance y acciones persistentes. */
+@Composable
+private fun QueueOverviewCard(
+    jobs: List<DownloadEntity>,
+    activeJobId: Long?,
+    paused: Boolean,
+    onTogglePause: () -> Unit
+) {
+    val active = jobs.firstOrNull { it.id == activeJobId }
+    val pending = jobs.count { !it.status.isTerminal }
+    val queued = jobs.count { it.status == DownloadStatus.QUEUED }
+    val completed = jobs.count { it.status == DownloadStatus.COMPLETED }
+    val errors = jobs.count {
+        it.status == DownloadStatus.FAILED || it.status == DownloadStatus.CANCELLED
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        VortexPalette.GraphiteHigh,
+                        VortexPalette.GraphiteRaised,
+                        VortexPalette.NeonDim.copy(alpha = 0.28f)
+                    )
+                ),
+                VortexShapes.large
+            )
+            .border(0.5.dp, VortexPalette.Neon.copy(alpha = 0.35f), VortexShapes.large)
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = when {
+                        paused && active != null -> "PAUSA PENDIENTE"
+                        paused -> "COLA PAUSADA"
+                        active != null -> "DESCARGANDO AHORA"
+                        pending > 0 -> "PREPARANDO COLA"
+                        else -> "TODO LISTO"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = when {
+                        errors > 0 && pending == 0 -> VortexPalette.Amber
+                        paused -> VortexPalette.Amber
+                        else -> VortexPalette.Neon
+                    }
+                )
+                Text(
+                    text = active?.title?.ifBlank { active.url }
+                        ?: if (pending > 0) "$queued esperando para descargar" else
+                            "$completed descargas completadas",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = VortexPalette.TextHigh,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+            if (pending > 0 || paused) {
+                Row(
+                    modifier = Modifier
+                        .background(VortexPalette.Graphite, VortexShapes.small)
+                        .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+                        .clickable(onClick = onTogglePause)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = if (paused) "Reanudar cola" else "Pausar cola",
+                        tint = if (paused) VortexPalette.Neon else VortexPalette.TextMid,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(
+                        text = if (paused) "REANUDAR" else "PAUSAR",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (paused) VortexPalette.Neon else VortexPalette.TextMid
+                    )
+                }
+            }
+        }
+
+        active?.let { job ->
+            ProgressBar(
+                fraction = PlaylistProgress.overall(
+                    job.playlistIndex,
+                    job.playlistCount,
+                    job.progress
+                ),
+                height = 5.dp,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = job.statusLine.ifBlank { job.status.label },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VortexPalette.TextLow,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "${(job.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VortexPalette.Cyan,
+                    modifier = Modifier.padding(start = 10.dp)
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            QueueMetric("ACTIVAS", pending, VortexPalette.Cyan)
+            QueueMetric("EN COLA", queued, VortexPalette.TextMid)
+            QueueMetric("LISTAS", completed, VortexPalette.Neon)
+            QueueMetric("ERRORES", errors, if (errors > 0) VortexPalette.Magenta else VortexPalette.TextLow)
+        }
+    }
+}
+
+@Composable
+private fun QueueMetric(label: String, value: Int, color: Color) {
+    Column {
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            color = color
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow
+        )
+    }
+}
+
+@Composable
+private fun QueueSearchField(
+    value: String,
+    resultCount: Int,
+    onValueChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.small)
+            .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            Icons.Filled.Search,
+            contentDescription = null,
+            tint = VortexPalette.TextLow,
+            modifier = Modifier.size(17.dp)
+        )
+        Box(Modifier.weight(1f)) {
+            if (value.isBlank()) {
+                Text(
+                    text = "Buscar en esta sección…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = VortexPalette.TextHigh),
+                cursorBrush = SolidColor(VortexPalette.Neon),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Text(
+            text = resultCount.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow
         )
     }
 }

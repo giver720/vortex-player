@@ -1,15 +1,18 @@
 package com.vortex.player.download
 
+import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.vortex.player.MainActivity
 import com.vortex.player.R
 import com.vortex.player.VortexApp
@@ -92,7 +95,7 @@ class DownloadService : Service() {
     }
 
     private suspend fun drainQueue() {
-        while (true) {
+        while (!queuePaused.value) {
             val job = repository.nextQueued() ?: break
             runJob(job)
         }
@@ -146,7 +149,7 @@ class DownloadService : Service() {
             // Una canción de Spotify ya viene con título y artista del catálogo, así que
             // consultar metadatos sería gastar una llamada de red para saber lo que ya
             // sabemos —y encima la respondería el vídeo de YouTube, con peores datos.
-            val named = if (spotify != null) {
+            val named = if (spotify != null || (job.outputName != null && job.title.isNotBlank())) {
                 job.copy(status = DownloadStatus.DOWNLOADING)
             } else {
                 repository.updateProgress(
@@ -177,7 +180,7 @@ class DownloadService : Service() {
                 processId = processId,
                 sourceOverride = job.searchQuery,
                 targetDurationMs = job.targetDurationMs,
-                outputName = spotify?.let {
+                outputName = job.outputName ?: spotify?.let {
                     SpotifyJobs.outputNameFrom(it.first, job.playlistFolder)
                 }
             ) { progress, eta, line ->
@@ -379,6 +382,12 @@ class DownloadService : Service() {
     }
 
     private fun notify(title: String, text: String?, progress: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         runCatching {
             NotificationManagerCompat.from(this)
                 .notify(NOTIFICATION_ID, buildNotification(title, text, progress))
@@ -406,9 +415,16 @@ class DownloadService : Service() {
 
         private val currentProcessId = MutableStateFlow<String?>(null)
         private val currentJobId = MutableStateFlow<Long?>(null)
+        private val paused = MutableStateFlow(false)
 
         /** Id del trabajo que se está descargando ahora mismo, para resaltarlo en la lista. */
         val activeJobId: StateFlow<Long?> = currentJobId.asStateFlow()
+
+        /**
+         * Pausa cooperativa: la transferencia actual termina y no se inicia la siguiente.
+         * Evita fingir una pausa de red que yt-dlp Android no puede garantizar.
+         */
+        val queuePaused: StateFlow<Boolean> = paused.asStateFlow()
 
         fun start(context: Context) {
             val intent = Intent(context, DownloadService::class.java)
@@ -423,6 +439,11 @@ class DownloadService : Service() {
             context.startService(
                 Intent(context, DownloadService::class.java).setAction(ACTION_CANCEL_CURRENT)
             )
+        }
+
+        fun setQueuePaused(context: Context, value: Boolean) {
+            paused.value = value
+            if (!value) start(context)
         }
     }
 }

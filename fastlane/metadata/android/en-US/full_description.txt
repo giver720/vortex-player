@@ -16,7 +16,7 @@ Not the system picture-in-picture — though that is there too. This is a window
 
 <b>Downloads with yt-dlp</b>
 
-YouTube, Vimeo, Twitch, TikTok, Twitter and everything else yt-dlp supports. Video up to 4K, or audio extracted to MP3, M4A, OPUS, FLAC or WAV. Playlists automatically get their own folder with numbered tracks, and you pick the destination folder with the system folder picker.
+YouTube, Vimeo, Twitch, TikTok, Twitter and everything else yt-dlp supports. Search by text or paste a link, preview playlists with thumbnails, and choose what to fetch. Video up to 4K, or audio extracted to MP3, M4A, OPUS, FLAC or WAV. Every playlist item has its own progress and retry while the collection keeps its folder and numbering.
 
 <b>Aspect ratio, VLC style</b>
 

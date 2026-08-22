@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistEntity::class,
         PlaylistItemEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -156,6 +156,21 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v8 -> v9 permite que una lista expandida conserve carpeta, orden y nombre. */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `outputName` TEXT")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_downloads_status_createdAt` " +
+                        "ON `downloads` (`status`, `createdAt`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_downloads_sourceId` " +
+                        "ON `downloads` (`sourceId`)"
+                )
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -165,7 +180,8 @@ abstract class VortexDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .build()
                     .also { instance = it }

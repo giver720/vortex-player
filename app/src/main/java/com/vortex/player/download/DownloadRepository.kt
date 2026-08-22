@@ -53,31 +53,72 @@ class DownloadRepository(private val dao: DownloadDao) {
         folder: String?,
         base: DownloadRequest
     ): Int {
-        tracks.forEach { track ->
-            dao.insert(
-                DownloadEntity(
-                    url = base.url,
-                    title = "${track.artist} - ${track.title}",
-                    uploader = track.artist,
-                    thumbnailUrl = track.coverUrl,
-                    // Spotify siempre baja como audio: pedir vídeo aquí no tendría sentido.
-                    kind = DownloadKind.AUDIO,
-                    audioCodec = base.audioCodec,
-                    audioBitrate = base.audioBitrate,
-                    playlist = false,
-                    embedThumbnail = false,
-                    embedMetadata = false,
-                    sourceId = track.id,
-                    searchQuery = SpotifyJobs.searchQuery(track),
-                    targetDurationMs = track.durationMs,
-                    tagsJson = SpotifyJobs.tagsJson(track),
-                    playlistFolder = folder,
-                    sponsorMode = base.sponsor.mode,
-                    sponsorCategories = base.sponsor.categoriesCsv
-                )
+        val entities = tracks.map { track ->
+            DownloadEntity(
+                url = base.url,
+                title = "${track.artist} - ${track.title}",
+                uploader = track.artist,
+                thumbnailUrl = track.coverUrl,
+                // Spotify siempre baja como audio: pedir vídeo aquí no tendría sentido.
+                kind = DownloadKind.AUDIO,
+                audioCodec = base.audioCodec,
+                audioBitrate = base.audioBitrate,
+                playlist = false,
+                embedThumbnail = false,
+                embedMetadata = false,
+                sourceId = track.id,
+                searchQuery = SpotifyJobs.searchQuery(track),
+                targetDurationMs = track.durationMs,
+                tagsJson = SpotifyJobs.tagsJson(track),
+                playlistFolder = folder,
+                sponsorMode = base.sponsor.mode,
+                sponsorCategories = base.sponsor.categoriesCsv
             )
         }
+        dao.insertAll(entities)
         return tracks.size
+    }
+
+    /**
+     * Convierte una playlist analizada en trabajos resistentes a fallos. Cada elemento
+     * se reintenta y cancela por separado, pero todos conservan carpeta y numeración.
+     */
+    suspend fun enqueuePlaylistEntries(
+        entries: List<PlaylistEntry>,
+        folder: String?,
+        base: DownloadRequest
+    ): Int {
+        val safeFolder = folder?.let(SpotifyJobs::sanitize)
+        val width = entries.size.toString().length.coerceAtLeast(3)
+        val entities = entries.mapIndexed { offset, entry ->
+            val number = entry.index.takeIf { it > 0 } ?: offset + 1
+            val prefix = number.toString().padStart(width, '0')
+            DownloadEntity(
+                url = entry.url,
+                title = entry.title,
+                uploader = entry.uploader,
+                thumbnailUrl = entry.thumbnailUrl,
+                kind = base.kind,
+                videoQuality = base.videoQuality,
+                videoContainer = base.videoContainer,
+                audioCodec = base.audioCodec,
+                audioBitrate = base.audioBitrate,
+                playlist = false,
+                embedThumbnail = base.embedThumbnail,
+                embedSubtitles = base.embedSubtitles,
+                embedMetadata = base.embedMetadata,
+                sourceId = entry.id,
+                outputName = buildString {
+                    if (safeFolder != null) append("$safeFolder/")
+                    append("$prefix - ${SpotifyJobs.sanitize(entry.title)}")
+                },
+                playlistFolder = safeFolder,
+                sponsorMode = base.sponsor.mode,
+                sponsorCategories = base.sponsor.categoriesCsv
+            )
+        }
+        dao.insertAll(entities)
+        return entities.size
     }
 
     suspend fun completedSourceIds(): Set<String> = dao.completedSourceIds().toSet()

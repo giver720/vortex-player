@@ -1,6 +1,7 @@
 package com.vortex.player.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
@@ -14,7 +15,13 @@ import com.vortex.player.download.VideoQuality
  * Una descarga, viva o histórica. La petición se guarda desarmada en columnas en vez de
  * serializada, para poder reintentar un trabajo antiguo sin volver a preguntar nada.
  */
-@Entity(tableName = "downloads")
+@Entity(
+    tableName = "downloads",
+    indices = [
+        Index(value = ["status", "createdAt"]),
+        Index(value = ["sourceId"])
+    ]
+)
 data class DownloadEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val url: String,
@@ -66,6 +73,9 @@ data class DownloadEntity(
 
     /** Etiquetas a escribir al terminar, serializadas en JSON. `null` = dejar las de yt-dlp. */
     val tagsJson: String? = null,
+
+    /** Nombre relativo impuesto por una lista expandida, incluida su carpeta. */
+    val outputName: String? = null,
 
     /** Carpeta creada para la lista, si el enlace era una playlist. */
     val playlistFolder: String? = null,

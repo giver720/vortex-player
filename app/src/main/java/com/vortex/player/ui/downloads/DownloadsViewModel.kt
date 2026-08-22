@@ -16,9 +16,11 @@ import com.vortex.player.download.EnginePreferences
 import com.vortex.player.download.SponsorCategory
 import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.SponsorSettings
+import com.vortex.player.download.SourcePlaylistSelection
 import com.vortex.player.download.VideoContainer
 import com.vortex.player.download.VideoQuality
 import com.vortex.player.download.YtDlpEngine
+import com.vortex.player.download.toSelection
 import com.vortex.player.data.MediaRepository
 import com.vortex.player.spotify.PlaylistSelection
 import com.vortex.player.spotify.SpotifyKind
@@ -46,6 +48,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val activeJobId: StateFlow<Long?> = DownloadService.activeJobId
+    val queuePaused: StateFlow<Boolean> = DownloadService.queuePaused
 
     private val _url = MutableStateFlow("")
     val url: StateFlow<String> = _url.asStateFlow()
@@ -201,10 +204,17 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             _message.value = "Pega primero un enlace"
             return
         }
-        if (!link.startsWith("http", ignoreCase = true) &&
-            !link.startsWith("spotify:", ignoreCase = true)
-        ) {
-            _message.value = "Ese texto no parece un enlace"
+        val isWebLink = link.startsWith("http", ignoreCase = true)
+        val isSpotifyUri = link.startsWith("spotify:", ignoreCase = true)
+        if (!isWebLink && !isSpotifyUri) {
+            if (link.length < 2) {
+                _message.value = "Escribe al menos dos caracteres para buscar"
+                return
+            }
+            analyzeSourceCollection(
+                target = "ytsearch20:$link",
+                displayName = "Resultados para “$link”"
+            )
             return
         }
 
@@ -213,6 +223,15 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        if (_playlist.value && looksLikePlaylist(link)) {
+            analyzeSourceCollection(link)
+            return
+        }
+
+        enqueueDirect(link)
+    }
+
+    private fun enqueueDirect(link: String) {
         viewModelScope.launch {
             repository.enqueue(
                 DownloadRequest(
@@ -236,12 +255,110 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * YouTube entrega listas largas con metadatos planos muy baratos. Se analizan antes
+     * de encolar para que el usuario elija pistas y cada una sea un trabajo recuperable.
+     */
+    private fun analyzeSourceCollection(target: String, displayName: String? = null) {
+        if (_resolving.value) return
+        viewModelScope.launch {
+            _resolving.value = true
+            _message.value = if (displayName == null) {
+                "Analizando la playlist…"
+            } else {
+                "Buscando en YouTube…"
+            }
+            val analysis = YtDlpEngine.analyzePlaylist(target)
+            if (analysis == null || !analysis.isPlaylist || analysis.entries.size <= 1) {
+                _resolving.value = false
+                _message.value = if (analysis == null) {
+                    if (displayName == null) {
+                        "No se pudo previsualizar; se usará la descarga directa"
+                    } else {
+                        "No se encontraron resultados"
+                    }
+                } else {
+                    null
+                }
+                if (displayName == null) enqueueDirect(target)
+                return@launch
+            }
+            val completed = repository.completedSourceIds()
+            _sourceSelection.value = analysis
+                .copy(name = displayName ?: analysis.name)
+                .toSelection(
+                    sourceUrl = target,
+                    completedIds = completed,
+                    folderName = if (displayName == null) analysis.name else null
+                )
+            _message.value = null
+            _resolving.value = false
+        }
+    }
+
+    private fun looksLikePlaylist(link: String): Boolean {
+        val value = link.lowercase()
+        return "list=" in value || "/playlist" in value || "/sets/" in value ||
+            "/album/" in value
+    }
+
+    /**
      * Resuelve el enlace contra el catálogo de Spotify y mete una entrada por canción.
      * De Spotify sólo salen metadatos; el audio se busca luego en YouTube Music.
      */
     /** Lista resuelta y a la espera de que el usuario elija qué bajar. */
     private val _selection = MutableStateFlow<PlaylistSelection?>(null)
     val selection: StateFlow<PlaylistSelection?> = _selection.asStateFlow()
+
+    private val _sourceSelection = MutableStateFlow<SourcePlaylistSelection?>(null)
+    val sourceSelection: StateFlow<SourcePlaylistSelection?> = _sourceSelection.asStateFlow()
+
+    fun toggleSourceEntry(index: Int) {
+        _sourceSelection.value = _sourceSelection.value?.toggle(index)
+    }
+
+    fun selectAllSourceEntries(selected: Boolean) {
+        _sourceSelection.value = _sourceSelection.value?.withAll(selected)
+    }
+
+    fun selectOnlyMissingSourceEntries() {
+        _sourceSelection.value = _sourceSelection.value?.withOnlyMissing()
+    }
+
+    fun cancelSourceSelection() {
+        _sourceSelection.value = null
+    }
+
+    fun confirmSourceSelection() {
+        val selection = _sourceSelection.value ?: return
+        val chosen = selection.selectedEntries()
+        if (chosen.isEmpty()) {
+            _message.value = "No has marcado ningún elemento"
+            return
+        }
+        viewModelScope.launch {
+            val count = repository.enqueuePlaylistEntries(
+                entries = chosen,
+                folder = selection.folderName,
+                base = DownloadRequest(
+                    url = selection.sourceUrl,
+                    kind = _kind.value,
+                    videoQuality = _quality.value,
+                    videoContainer = _container.value,
+                    audioCodec = _codec.value,
+                    audioBitrate = _bitrate.value,
+                    playlist = false,
+                    embedSubtitles = _embedSubtitles.value,
+                    embedThumbnail = _embedThumbnail.value,
+                    embedMetadata = _embedMetadata.value,
+                    sponsor = sponsor.value
+                )
+            )
+            DownloadService.start(getApplication())
+            _sourceSelection.value = null
+            _url.value = ""
+            _message.value = "$count elementos añadidos a la cola"
+        }
+    }
 
     fun toggleTrack(index: Int) {
         _selection.value = _selection.value?.toggle(index)
@@ -366,6 +483,16 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelCurrent() = DownloadService.cancelCurrent(getApplication())
+
+    fun toggleQueuePaused() {
+        DownloadService.setQueuePaused(getApplication(), !queuePaused.value)
+        _message.value = when {
+            !queuePaused.value -> "Cola reanudada"
+            activeJobId.value != null ->
+                "La cola se detendrá al terminar la descarga actual"
+            else -> "Cola pausada"
+        }
+    }
 
     fun retry(id: Long) {
         viewModelScope.launch {
