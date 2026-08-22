@@ -40,9 +40,11 @@ El destino lo elige el usuario con el selector de carpetas del sistema.
 
 **Enlaces de Spotify.** Pega una canción, un álbum o una lista y Vórtex lee **sólo los
 metadatos** del catálogo —título, artista, duración y portada—, busca cada tema en
-YouTube Music filtrando por duración y etiqueta el resultado con esos datos. El audio de
+YouTube filtrando por duración y etiqueta el resultado con esos datos. El audio de
 Spotify va cifrado y no se toca: es el mismo enfoque de spotDL. Cada canción entra en la
-cola por separado, así que una lista de ochenta temas no se pierde porque falle uno.
+cola por separado, así que una lista de ochenta temas no se pierde porque falle uno. El
+motor de catálogo se actualiza por separado mediante un manifiesto declarativo validado:
+puede adaptarse a cambios de estructura de Spotify sin descargar ni ejecutar código.
 
 **Aspecto al estilo VLC.** Ajustar, llenar, estirar y relaciones forzadas (16:9, 4:3,
 18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco
@@ -137,6 +139,7 @@ app/src/main/java/com/vortex/player/
 │   └── PlaybackService.kt   Sesión única + conmutación de motor
 ├── popup/           Ventana flotante (overlay + Compose)
 ├── download/        yt-dlp, cola, destino y publicación en la mediateca
+├── spotify/         Catálogo, reglas actualizables, paginación y etiquetas
 ├── update/          Comprobación, descarga e instalación desde las Releases
 └── ui/              Compose: biblioteca, reproductor, descargas, tema HUD
 ```

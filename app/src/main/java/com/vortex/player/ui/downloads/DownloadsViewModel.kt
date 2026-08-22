@@ -24,6 +24,7 @@ import com.vortex.player.download.toSelection
 import com.vortex.player.data.MediaRepository
 import com.vortex.player.spotify.PlaylistSelection
 import com.vortex.player.spotify.SpotifyKind
+import com.vortex.player.spotify.SpotifyEngine
 import com.vortex.player.spotify.SpotifyResolver
 import com.vortex.player.spotify.SpotifyResult
 import com.vortex.player.spotify.markOwned
@@ -131,6 +132,13 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
                 loadEngineVersion()
             }
         }
+        // Las reglas pesan apenas unos bytes y se revisan semanalmente. Si GitHub no
+        // responde, el motor integrado sigue disponible y la pantalla no se bloquea.
+        viewModelScope.launch {
+            if (SpotifyEngine.shouldAutoUpdate(getApplication())) {
+                SpotifyEngine.update(getApplication())
+            }
+        }
     }
 
     fun setUrl(value: String) {
@@ -159,6 +167,21 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     val lastEngineUpdate: StateFlow<String?> =
         EnginePreferences.lastResult(getApplication())
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val spotifyEngineVersion: StateFlow<String> =
+        SpotifyEngine.version(getApplication())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, SpotifyEngine.bundled.label)
+
+    val lastSpotifyEngineUpdate: StateFlow<String?> =
+        SpotifyEngine.lastResult(getApplication())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val autoUpdateSpotifyEngine: StateFlow<Boolean> =
+        SpotifyEngine.autoUpdateEnabled(getApplication())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    private val _updatingSpotifyEngine = MutableStateFlow(false)
+    val updatingSpotifyEngine: StateFlow<Boolean> = _updatingSpotifyEngine.asStateFlow()
     fun setCodec(value: AudioCodec) { _codec.value = value }
     fun setBitrate(value: AudioBitrate) { _bitrate.value = value }
     fun togglePlaylist() { _playlist.value = !_playlist.value }
@@ -303,7 +326,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Resuelve el enlace contra el catálogo de Spotify y mete una entrada por canción.
-     * De Spotify sólo salen metadatos; el audio se busca luego en YouTube Music.
+     * De Spotify sólo salen metadatos; el audio se busca luego en YouTube.
      */
     /** Lista resuelta y a la espera de que el usuario elija qué bajar. */
     private val _selection = MutableStateFlow<PlaylistSelection?>(null)
@@ -444,7 +467,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
             // La pantalla de selección se llena por bloques: en una lista de trescientas
             // ya se puede empezar a mirar mientras llegan las demás páginas.
-            val result = SpotifyResolver.resolve(link) { folder, page ->
+            val result = SpotifyResolver.resolve(getApplication(), link) { folder, page ->
                 val marked = markOwned(page, folder, completedIds, libraryNames)
                 val current = _selection.value
                 _selection.value = if (current == null) {
@@ -572,6 +595,22 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAutoUpdate(enabled: Boolean) {
         viewModelScope.launch { EnginePreferences.setAutoUpdate(getApplication(), enabled) }
+    }
+
+    /** Actualiza sólo las reglas declarativas del catálogo; nunca descarga código. */
+    fun updateSpotifyEngine() {
+        if (_updatingSpotifyEngine.value) return
+        viewModelScope.launch {
+            _updatingSpotifyEngine.value = true
+            _message.value = "Actualizando el motor Spotify…"
+            val result = SpotifyEngine.update(getApplication())
+            _message.value = result
+            _updatingSpotifyEngine.value = false
+        }
+    }
+
+    fun setSpotifyAutoUpdate(enabled: Boolean) {
+        viewModelScope.launch { SpotifyEngine.setAutoUpdate(getApplication(), enabled) }
     }
 
     private fun loadEngineVersion() {

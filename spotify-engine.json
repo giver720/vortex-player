@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "version": 2,
+  "label": "2.0",
+  "entityPaths": [
+    "/props/pageProps/state/data/entity",
+    "/props/pageProps/entity"
+  ],
+  "tokenPaths": [
+    "/props/pageProps/state/settings/session/accessToken"
+  ]
+}

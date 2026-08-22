@@ -16,7 +16,7 @@ data class SpotifyTrack(
     val totalTracks: Int
 ) {
     /**
-     * Consulta de búsqueda. Se antepone el artista porque YouTube Music pondera mucho el
+     * Consulta de búsqueda. Se antepone el artista porque YouTube pondera mucho el
      * primer término, y "Artista - Título" acierta bastante más que al revés.
      */
     val searchQuery: String get() = "$artist - $title"

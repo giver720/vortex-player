@@ -197,7 +197,7 @@ object YtDlpEngine {
         processId: String,
         /**
          * Qué descargar, si no es [DownloadRequest.url]. Las canciones de Spotify pasan
-         * aquí una búsqueda tipo `ytmsearch5:Artista - Título`: el enlace original sólo
+         * aquí una búsqueda tipo `ytsearch5:Artista - Título`: el enlace original sólo
          * identifica la pista en el catálogo, no un audio descargable.
          */
         sourceOverride: String? = null,

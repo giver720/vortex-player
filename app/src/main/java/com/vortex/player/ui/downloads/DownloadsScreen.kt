@@ -139,6 +139,10 @@ fun DownloadsScreen(
     val updatingEngine by viewModel.updatingEngine.collectAsStateWithLifecycle()
     val autoUpdateEngine by viewModel.autoUpdateEngine.collectAsStateWithLifecycle()
     val lastEngineUpdate by viewModel.lastEngineUpdate.collectAsStateWithLifecycle()
+    val spotifyEngineVersion by viewModel.spotifyEngineVersion.collectAsStateWithLifecycle()
+    val updatingSpotifyEngine by viewModel.updatingSpotifyEngine.collectAsStateWithLifecycle()
+    val autoUpdateSpotifyEngine by viewModel.autoUpdateSpotifyEngine.collectAsStateWithLifecycle()
+    val lastSpotifyEngineUpdate by viewModel.lastSpotifyEngineUpdate.collectAsStateWithLifecycle()
 
     // Mientras haya una lista resuelta esperando decisión, ocupa la pantalla entera: es
     // el paso siguiente del mismo flujo, no una capa encima de la cola.
@@ -293,7 +297,7 @@ fun DownloadsScreen(
             }
 
             if (isSpotify) {
-                item { SpotifyNotice(resolving) }
+                item { SpotifyNotice(resolving, spotifyEngineVersion) }
             } else if (resolving) {
                 item { PlaylistAnalysisNotice() }
             }
@@ -444,6 +448,17 @@ fun DownloadsScreen(
                     lastResult = lastEngineUpdate,
                     onUpdate = viewModel::updateEngine,
                     onToggleAuto = viewModel::setAutoUpdate
+                )
+            }
+
+            if (optionsExpanded) item {
+                SpotifyEnginePanel(
+                    version = spotifyEngineVersion,
+                    updating = updatingSpotifyEngine,
+                    autoUpdate = autoUpdateSpotifyEngine,
+                    lastResult = lastSpotifyEngineUpdate,
+                    onUpdate = viewModel::updateSpotifyEngine,
+                    onToggleAuto = viewModel::setSpotifyAutoUpdate
                 )
             }
 
@@ -913,7 +928,7 @@ private fun QueueMenuItem(
 }
 
 @Composable
-private fun SpotifyNotice(resolving: Boolean) {
+private fun SpotifyNotice(resolving: Boolean, engineVersion: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -923,13 +938,14 @@ private fun SpotifyNotice(resolving: Boolean) {
             .padding(12.dp)
     ) {
         Text(
-            text = if (resolving) "LEYENDO SPOTIFY…" else "ENLACE DE SPOTIFY",
+            text = if (resolving) "LEYENDO SPOTIFY · MOTOR $engineVersion…" else
+                "ENLACE DE SPOTIFY · MOTOR $engineVersion",
             style = MaterialTheme.typography.labelMedium,
             color = VortexPalette.Cyan
         )
         Text(
             text = "De Spotify sólo se leen los datos de las canciones: título, artista, " +
-                "duración y portada. El audio se busca después en YouTube Music y se " +
+                "duración y portada. El audio se busca después en YouTube y se " +
                 "etiqueta con esos datos. Cada canción entra en la cola por separado.",
             style = MaterialTheme.typography.bodySmall,
             color = VortexPalette.TextMid,
@@ -1482,6 +1498,97 @@ private fun EnginePanel(
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = VortexPalette.Graphite,
                     checkedTrackColor = VortexPalette.Neon,
+                    uncheckedThumbColor = VortexPalette.TextLow,
+                    uncheckedTrackColor = VortexPalette.GraphiteHigh
+                )
+            )
+        }
+    }
+}
+
+/**
+ * El catálogo de Spotify cambia por separado de yt-dlp. Esta tarjeta deja clara esa
+ * separación y permite renovar únicamente rutas JSON declarativas y verificadas.
+ */
+@Composable
+private fun SpotifyEnginePanel(
+    version: String,
+    updating: Boolean,
+    autoUpdate: Boolean,
+    lastResult: String?,
+    onUpdate: () -> Unit,
+    onToggleAuto: (Boolean) -> Unit
+) {
+    SectionLabel("MOTOR SPOTIFY")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Cyan.copy(alpha = 0.45f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Catálogo Spotify $version",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = VortexPalette.TextHigh,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = lastResult ?: "Reglas integradas listas",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = if (updating) "COMPROBANDO…" else "ACTUALIZAR",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (updating) VortexPalette.TextLow else VortexPalette.Graphite,
+                modifier = Modifier
+                    .background(
+                        if (updating) VortexPalette.GraphiteHigh else VortexPalette.Cyan,
+                        VortexShapes.small
+                    )
+                    .clickable(enabled = !updating, onClick = onUpdate)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+
+        Text(
+            text = "Actualiza las reglas que leen playlists, álbumes y pistas. Los hosts " +
+                "y el código permanecen dentro de Vortex; nunca se ejecuta código remoto.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextMid,
+            modifier = Modifier.padding(top = 10.dp)
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 8.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "REVISAR CADA SEMANA",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = VortexPalette.TextMid
+                )
+                Text(
+                    text = "Mantiene la integración preparada ante cambios de Spotify.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow
+                )
+            }
+            Switch(
+                checked = autoUpdate,
+                onCheckedChange = onToggleAuto,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = VortexPalette.Graphite,
+                    checkedTrackColor = VortexPalette.Cyan,
                     uncheckedThumbColor = VortexPalette.TextLow,
                     uncheckedTrackColor = VortexPalette.GraphiteHigh
                 )

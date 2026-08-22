@@ -1,7 +1,9 @@
 package com.vortex.player.spotify
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -13,7 +15,7 @@ import java.net.URL
  *
  * El audio de Spotify va cifrado y no se toca: lo único que se obtiene aquí es el
  * catálogo (título, artista, álbum, duración, portada) que luego sirve para buscar la
- * canción en YouTube Music. Es el mismo enfoque de spotDL.
+ * canción en YouTube. Es el mismo enfoque de spotDL.
  *
  * Hay dos vías. La página pública de *embed* devuelve la lista al instante y sin
  * credenciales, pero **corta en 100 pistas y no pagina**. Para superar ese tope se
@@ -29,8 +31,11 @@ object SpotifyResolver {
     /** Tope duro del embed. Llegar a él significa "seguramente hay más". */
     private const val EMBED_MAX = 100
 
-    /** Tamaño de bloque de la API. 100 es el máximo que admite para playlists. */
-    private const val PAGE = 100
+    /** Tamaño máximo documentado actualmente por Spotify para elementos de playlist. */
+    private const val PAGE = 50
+
+    /** Un token del reproductor web suele vivir una hora; se descarta antes. */
+    private const val TOKEN_CACHE_MS = 30 * 60 * 1000L
 
     private const val UA =
         "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -39,8 +44,13 @@ object SpotifyResolver {
     private val LINK = Regex(
         """(?:open\.spotify\.com/(?:intl-[a-z-]+/)?|spotify:)(track|album|playlist)[/:]([A-Za-z0-9]+)"""
     )
+    private val SHORT_LINK = Regex("""https?://(?:spotify\.link|spoti\.fi)/[A-Za-z0-9_-]+""")
 
-    fun isSpotifyLink(input: String): Boolean = LINK.containsMatchIn(input)
+    @Volatile private var cachedToken: String? = null
+    @Volatile private var cachedTokenAt: Long = 0L
+
+    fun isSpotifyLink(input: String): Boolean =
+        LINK.containsMatchIn(input) || SHORT_LINK.containsMatchIn(input)
 
     /**
      * Resuelve el enlace. Las canciones llegan por bloques a [onPage] conforme se
@@ -50,10 +60,12 @@ object SpotifyResolver {
      * El resultado final contiene la lista completa de lo que se pudo obtener.
      */
     suspend fun resolve(
+        context: Context,
         input: String,
         onPage: (suspend (folder: String?, page: List<SpotifyTrack>) -> Unit)? = null
     ): SpotifyResult = withContext(Dispatchers.IO) {
         val match = LINK.find(input)
+            ?: SHORT_LINK.find(input)?.value?.let(::expandShortLink)?.let(LINK::find)
             ?: return@withContext SpotifyResult.Error("Ese enlace de Spotify no se reconoce")
 
         val kindName = match.groupValues[1]
@@ -64,6 +76,7 @@ object SpotifyResolver {
             else -> SpotifyKind.PLAYLIST
         }
 
+        val config = SpotifyEngine.current(context)
         val html = fetch("https://open.spotify.com/embed/$kindName/$id")
             ?: return@withContext SpotifyResult.Error(
                 "No se pudo abrir el enlace. Comprueba tu conexión o que sea público."
@@ -74,7 +87,7 @@ object SpotifyResolver {
                 "Spotify ha cambiado el formato de su página y ya no se puede leer la lista."
             )
 
-        val entity = entityOf(json)
+        val entity = entityOf(json, config)
             ?: return@withContext SpotifyResult.Error(
                 "Spotify ha cambiado la estructura de la página."
             )
@@ -109,13 +122,16 @@ object SpotifyResolver {
 
         // --- Vía rápida: sólo hace falta si el embed se quedó corto -----------
         if (looksTruncated) {
-            val token = json.optJSONObject("props")
-                ?.optJSONObject("pageProps")
-                ?.optJSONObject("state")
-                ?.optJSONObject("settings")
-                ?.optJSONObject("session")
-                ?.optString("accessToken")
-                ?.takeIf { it.isNotBlank() }
+            val freshToken = config.tokenPaths.firstNotNullOfOrNull { path ->
+                stringAt(json, path)
+            }
+            if (freshToken != null) {
+                cachedToken = freshToken
+                cachedTokenAt = System.currentTimeMillis()
+            }
+            val token = freshToken ?: cachedToken?.takeIf {
+                System.currentTimeMillis() - cachedTokenAt < TOKEN_CACHE_MS
+            }
 
             if (token != null) {
                 // `name` es también el nombre de la carpeta: se conoce desde el embed,
@@ -275,7 +291,62 @@ object SpotifyResolver {
         }
     }
 
-    private fun fetch(url: String, bearer: String? = null): String? = runCatching {
+    /** Limpia sólo estado efímero; las reglas validadas permanecen en DataStore. */
+    fun clearRuntimeState() {
+        cachedToken = null
+        cachedTokenAt = 0L
+    }
+
+    /** Sigue únicamente los acortadores oficiales antes de aplicar el parser normal. */
+    private fun expandShortLink(shortUrl: String): String? = runCatching {
+        val connection = (URL(shortUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            instanceFollowRedirects = true
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("User-Agent", UA)
+        }
+        try {
+            connection.responseCode
+            connection.url.toString().takeIf { LINK.containsMatchIn(it) }
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrNull()
+
+    private data class HttpResponse(
+        val status: Int,
+        val body: String?,
+        val retryAfterSeconds: Long?
+    )
+
+    /**
+     * Spotify limita con 429 las sesiones anónimas. Respetar Retry-After y reintentar
+     * respuestas transitorias evita convertir una ráfaga breve en una lista incompleta.
+     */
+    private suspend fun fetch(url: String, bearer: String? = null): String? {
+        repeat(3) { attempt ->
+            val response = fetchOnce(url, bearer)
+            if (response != null && response.status in 200..299) return response.body
+
+            val status = response?.status ?: -1
+            val retryable = status == -1 || status == 429 || status in 500..504
+            if (!retryable || attempt == 2) {
+                Log.w(TAG, "HTTP $status en $url")
+                return null
+            }
+            val waitMs = if (status == 429) {
+                ((response?.retryAfterSeconds ?: 1L) * 1000L).coerceIn(1_000L, 8_000L)
+            } else {
+                700L * (attempt + 1)
+            }
+            Log.w(TAG, "HTTP $status en Spotify; reintento ${attempt + 2}/3")
+            delay(waitMs)
+        }
+        return null
+    }
+
+    private fun fetchOnce(url: String, bearer: String? = null): HttpResponse? = runCatching {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             instanceFollowRedirects = true
@@ -287,11 +358,15 @@ object SpotifyResolver {
             bearer?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         try {
-            if (connection.responseCode !in 200..299) {
-                Log.w(TAG, "HTTP ${connection.responseCode} en $url")
-                return null
-            }
-            connection.inputStream.bufferedReader().readText()
+            val status = connection.responseCode
+            val body = if (status in 200..299) {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } else null
+            HttpResponse(
+                status = status,
+                body = body,
+                retryAfterSeconds = connection.getHeaderField("Retry-After")?.toLongOrNull()
+            )
         } finally {
             connection.disconnect()
         }
@@ -309,13 +384,26 @@ object SpotifyResolver {
     }
 
     /** La ruta ha cambiado alguna vez entre versiones del embed; se prueban ambas. */
-    private fun entityOf(root: JSONObject): JSONObject? =
-        root.optJSONObject("props")
-            ?.optJSONObject("pageProps")
-            ?.let { page ->
-                page.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("entity")
-                    ?: page.optJSONObject("entity")
-            }
+    private fun entityOf(root: JSONObject, config: SpotifyEngineConfig): JSONObject? =
+        config.entityPaths.firstNotNullOfOrNull { path -> objectAt(root, path) }
+
+    private fun objectAt(root: JSONObject, path: String): JSONObject? {
+        var current: JSONObject = root
+        for (segment in path.split('/').drop(1)) {
+            current = current.optJSONObject(segment) ?: return null
+        }
+        return current
+    }
+
+    private fun stringAt(root: JSONObject, path: String): String? {
+        val segments = path.split('/').drop(1)
+        if (segments.isEmpty()) return null
+        var current = root
+        for (segment in segments.dropLast(1)) {
+            current = current.optJSONObject(segment) ?: return null
+        }
+        return current.optString(segments.last()).takeIf { it.isNotBlank() }
+    }
 
     private fun artistsOf(entity: JSONObject): String {
         val artists = entity.optJSONArray("artists") ?: return ""

@@ -57,7 +57,7 @@ data class DownloadEntity(
     /**
      * Consulta que se pasa a yt-dlp en lugar de [url]. La usan las canciones venidas de
      * Spotify: el enlace original identifica la pista en el catálogo, pero lo que hay
-     * que descargar es el resultado de buscarla en YouTube Music.
+     * que descargar es el resultado de buscarla en YouTube.
      */
     val searchQuery: String? = null,
 

@@ -22,8 +22,8 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.16.0"
+        versionCode = 23
+        versionName = "0.17.0"
     }
 
     signingConfigs {
@@ -142,4 +142,8 @@ dependencies {
     implementation(libs.androidx.documentfile)
 
     implementation(libs.accompanist.permissions)
+
+    testImplementation("junit:junit:4.13.2")
+    // La implementación de org.json de Android no ejecuta en la JVM local.
+    testImplementation("org.json:json:20240303")
 }
