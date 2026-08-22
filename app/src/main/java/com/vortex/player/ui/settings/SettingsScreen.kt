@@ -20,8 +20,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +44,7 @@ import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EqPreset
+import com.vortex.player.spotify.SpotifyAccountState
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 
@@ -56,12 +58,14 @@ import com.vortex.player.ui.theme.VortexShapes
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenSpotify: () -> Unit
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val capabilities by viewModel.capabilities.collectAsStateWithLifecycle()
     val output by viewModel.output.collectAsStateWithLifecycle()
     val perOutput by viewModel.perOutput.collectAsStateWithLifecycle()
+    val spotifyAccount by viewModel.spotifyAccount.collectAsStateWithLifecycle()
     val active = settings.enabled
 
     Box(Modifier.fillMaxSize().background(VortexPalette.Graphite)) {
@@ -81,17 +85,35 @@ fun SettingsScreen(
                 ) {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Filled.ArrowBack,
+                            Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver",
                             tint = VortexPalette.TextHigh
                         )
                     }
                     Text(
-                        text = "SONIDO",
+                        text = "AJUSTES",
                         style = MaterialTheme.typography.labelLarge,
                         color = VortexPalette.TextHigh
                     )
                 }
+            }
+
+            item {
+                SpotifyAccountPanel(
+                    state = spotifyAccount,
+                    onConnect = viewModel::connectSpotify,
+                    onDisconnect = viewModel::disconnectSpotify,
+                    onOpenLibrary = onOpenSpotify
+                )
+            }
+
+            item {
+                Text(
+                    text = "SONIDO",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = VortexPalette.TextLow,
+                    modifier = Modifier.padding(start = 14.dp, top = 14.dp, bottom = 4.dp)
+                )
             }
 
             item { MasterSwitch(settings, viewModel::setEnabled) }
@@ -301,6 +323,113 @@ fun SettingsScreen(
                         .padding(6.dp)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SpotifyAccountPanel(
+    state: SpotifyAccountState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenLibrary: () -> Unit
+) {
+    val connected = state is SpotifyAccountState.Connected
+    val busy = state is SpotifyAccountState.Connecting
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Neon.copy(alpha = 0.45f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = if (connected) VortexPalette.Neon else VortexPalette.Cyan,
+                modifier = Modifier.size(21.dp)
+            )
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(
+                    text = when (state) {
+                        is SpotifyAccountState.Connected -> "SPOTIFY · ${state.displayName}"
+                        SpotifyAccountState.Connecting -> "ESPERANDO A SPOTIFY"
+                        is SpotifyAccountState.Error -> "SPOTIFY · SIN CONEXIÓN"
+                        SpotifyAccountState.Disconnected -> "CUENTA SPOTIFY · BETA"
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    color = VortexPalette.TextHigh,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = when (state) {
+                        is SpotifyAccountState.Connected ->
+                            "Cuenta autorizada para importar biblioteca y playlists."
+                        SpotifyAccountState.Connecting ->
+                            "Completa el acceso en el navegador; tienes tres minutos."
+                        is SpotifyAccountState.Error -> state.message
+                        SpotifyAccountState.Disconnected ->
+                            "Conecta tu cuenta con OAuth PKCE. Vórtex nunca recibe tu contraseña."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state is SpotifyAccountState.Error) {
+                        VortexPalette.Magenta
+                    } else {
+                        VortexPalette.TextLow
+                    },
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = when {
+                    busy -> "ABIERTO…"
+                    connected -> "SALIR"
+                    else -> "CONECTAR"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = when {
+                    busy -> VortexPalette.TextLow
+                    connected -> VortexPalette.Magenta
+                    else -> VortexPalette.Graphite
+                },
+                modifier = Modifier
+                    .background(
+                        when {
+                            busy -> VortexPalette.GraphiteHigh
+                            connected -> VortexPalette.GraphiteHigh
+                            else -> VortexPalette.Neon
+                        },
+                        VortexShapes.small
+                    )
+                    .clickable(enabled = !busy) {
+                        if (connected) onDisconnect() else onConnect()
+                    }
+                    .padding(horizontal = 11.dp, vertical = 8.dp)
+            )
+        }
+        Text(
+            text = "La API oficial se usa sólo para tu cuenta y metadatos. Los tokens se " +
+                "guardan cifrados por Android y puedes revocar el acceso con SALIR.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 9.dp)
+        )
+        if (connected) {
+            Text(
+                text = "ABRIR TU BIBLIOTECA SPOTIFY",
+                style = MaterialTheme.typography.labelLarge,
+                color = VortexPalette.Graphite,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .background(VortexPalette.Cyan, VortexShapes.small)
+                    .clickable(onClick = onOpenLibrary)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            )
         }
     }
 }

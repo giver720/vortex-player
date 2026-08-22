@@ -13,6 +13,9 @@ import com.vortex.player.audio.EQ_MAX_DB
 import com.vortex.player.audio.EQ_MIN_DB
 import com.vortex.player.audio.EqPreset
 import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.spotify.SpotifyAccountState
+import com.vortex.player.spotify.SpotifyAuth
+import com.vortex.player.spotify.SpotifyLibraryRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +25,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
+    private val spotifyLibrary = SpotifyLibraryRepository.get(app)
+
+    init {
+        SpotifyAuth.initialize(app)
+    }
+
+    val spotifyAccount: StateFlow<SpotifyAccountState> = SpotifyAuth.state
 
     /** Si los perfiles por salida están activos, o se comparte uno solo. */
     val perOutput: StateFlow<Boolean> = AudioPreferences.observePerOutput(app)
@@ -56,6 +66,18 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPerOutput(enabled: Boolean) {
         viewModelScope.launch { AudioPreferences.setPerOutput(getApplication(), enabled) }
+    }
+
+    fun connectSpotify() {
+        viewModelScope.launch { SpotifyAuth.connect(getApplication()) }
+    }
+
+    fun disconnectSpotify() {
+        val id = (spotifyAccount.value as? SpotifyAccountState.Connected)?.accountId
+        SpotifyAuth.disconnect(getApplication())
+        if (id != null) {
+            viewModelScope.launch { spotifyLibrary.clearAccount(id) }
+        }
     }
 
     fun setEnabled(enabled: Boolean) = update { it.copy(enabled = enabled) }

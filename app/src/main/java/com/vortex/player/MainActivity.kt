@@ -28,6 +28,8 @@ import com.vortex.player.ui.library.LibraryViewModel
 import com.vortex.player.ui.player.PlayerActivity
 import com.vortex.player.ui.settings.SettingsScreen
 import com.vortex.player.ui.settings.SettingsViewModel
+import com.vortex.player.ui.spotify.SpotifyHubScreen
+import com.vortex.player.ui.spotify.SpotifyHubViewModel
 import com.vortex.player.ui.theme.VortexTheme
 import com.vortex.player.ui.update.UpdateBanner
 import com.vortex.player.ui.update.UpdateDialog
@@ -36,7 +38,7 @@ import com.vortex.player.ui.update.UpdateViewModel
 import com.vortex.player.update.UpdateInstaller
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-private enum class Screen { LIBRARY, DOWNLOADS, SETTINGS }
+private enum class Screen { LIBRARY, DOWNLOADS, SETTINGS, SPOTIFY }
 
 class MainActivity : ComponentActivity() {
 
@@ -44,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private val downloadsViewModel: DownloadsViewModel by viewModels()
     private val updateViewModel: UpdateViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private val spotifyHubViewModel: SpotifyHubViewModel by viewModels()
 
     /**
      * El permiso de superposición no se concede desde un diálogo normal: hay que mandar
@@ -117,7 +120,28 @@ class MainActivity : ComponentActivity() {
                             BackHandler { screen = Screen.LIBRARY }
                             SettingsScreen(
                                 viewModel = settingsViewModel,
-                                onBack = { screen = Screen.LIBRARY }
+                                onBack = { screen = Screen.LIBRARY },
+                                onOpenSpotify = { screen = Screen.SPOTIFY }
+                            )
+                        }
+
+                        Screen.SPOTIFY -> {
+                            BackHandler { screen = Screen.SETTINGS }
+                            SpotifyHubScreen(
+                                viewModel = spotifyHubViewModel,
+                                onBack = { screen = Screen.SETTINGS },
+                                onOpenSpotify = { url ->
+                                    runCatching {
+                                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                    }
+                                },
+                                onPlayLocal = { uri ->
+                                    startActivity(
+                                        Intent(this, PlayerActivity::class.java)
+                                            .setAction(Intent.ACTION_VIEW)
+                                            .setDataAndType(Uri.parse(uri), "audio/*")
+                                    )
+                                }
                             )
                         }
                     }

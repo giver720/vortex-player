@@ -54,6 +54,13 @@ puede adaptarse a cambios de estructura de Spotify sin descargar ni ejecutar có
 Además, el lector reconoce estados hidratados alternativos y entidades serializadas para
 resistir despliegues A/B que muevan los datos sin previo aviso.
 
+**Tu Spotify (beta).** La conexión oficial usa OAuth 2.0 con PKCE: Vórtex nunca incluye
+ni solicita un `client secret`. El Hub sincroniza las playlists autorizadas de la cuenta,
+mantiene una caché local para poder consultarlas sin conexión y busca coincidencias con
+la música que ya existe en el teléfono. Sólo reproduce esos archivos locales o abre la
+canción en Spotify; la API oficial no forma parte del motor de descargas. Al desconectar
+la cuenta se eliminan sus datos de la caché.
+
 **Aspecto al estilo VLC.** Ajustar, llenar, estirar y relaciones forzadas (16:9, 4:3,
 18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco
 encima de cualquier preset.

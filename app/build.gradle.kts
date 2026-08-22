@@ -22,8 +22,11 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 25
-        versionName = "0.19.0"
+        versionCode = 26
+        versionName = "0.20.0"
+        // El Client ID identifica la app y es público. El Client Secret nunca entra al APK:
+        // Android autentica con Authorization Code + PKCE.
+        buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"511ae080967c4da7b98933258ba1b27b\"")
     }
 
     signingConfigs {

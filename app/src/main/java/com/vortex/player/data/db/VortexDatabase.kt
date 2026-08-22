@@ -13,9 +13,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MediaStateEntity::class,
         DownloadEntity::class,
         PlaylistEntity::class,
-        PlaylistItemEntity::class
+        PlaylistItemEntity::class,
+        SpotifyPlaylistEntity::class,
+        SpotifyTrackEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -24,6 +26,7 @@ abstract class VortexDatabase : RoomDatabase() {
     abstract fun mediaStateDao(): MediaStateDao
     abstract fun downloadDao(): DownloadDao
     abstract fun playlistDao(): PlaylistDao
+    abstract fun spotifyCacheDao(): SpotifyCacheDao
 
     companion object {
         @Volatile
@@ -186,6 +189,58 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v10 -> v11 guarda la biblioteca oficial de Spotify para uso sin conexión. */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `spotify_playlists` (
+                        `accountId` TEXT NOT NULL,
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `owner` TEXT NOT NULL,
+                        `imageUrl` TEXT,
+                        `itemCount` INTEGER NOT NULL,
+                        `spotifyUrl` TEXT,
+                        `snapshotId` TEXT,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`accountId`, `id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_spotify_playlists_accountId_name` " +
+                        "ON `spotify_playlists` (`accountId`, `name`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `spotify_tracks` (
+                        `accountId` TEXT NOT NULL,
+                        `playlistId` TEXT NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        `spotifyId` TEXT,
+                        `title` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `album` TEXT NOT NULL,
+                        `durationMs` INTEGER NOT NULL,
+                        `imageUrl` TEXT,
+                        `spotifyUrl` TEXT,
+                        `isrc` TEXT,
+                        PRIMARY KEY(`accountId`, `playlistId`, `position`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_spotify_tracks_accountId_playlistId` " +
+                        "ON `spotify_tracks` (`accountId`, `playlistId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_spotify_tracks_spotifyId` " +
+                        "ON `spotify_tracks` (`spotifyId`)"
+                )
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -196,7 +251,7 @@ abstract class VortexDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                        MIGRATION_8_9, MIGRATION_9_10
+                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
                     )
                     .build()
                     .also { instance = it }
