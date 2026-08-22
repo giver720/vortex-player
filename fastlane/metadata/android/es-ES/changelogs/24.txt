@@ -1,0 +1,7 @@
+Descargas simultáneas y Spotify más resistente.
+
+• Elige de 1 a 10 descargas a la vez con un deslizador o botones numéricos.
+• Cambia el límite en caliente sin interrumpir las descargas que ya están activas.
+• Consulta varias descargas activas y cancela cada una por separado.
+• Pausar, reanudar y vaciar la cola funciona correctamente con trabajos paralelos.
+• Spotify reconoce estructuras alternativas y datos serializados durante despliegues A/B.

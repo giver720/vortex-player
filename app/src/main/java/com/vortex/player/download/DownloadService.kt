@@ -25,23 +25,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Procesa la cola de descargas de una en una, en primer plano.
- *
- * Secuencial y no en paralelo a propósito: yt-dlp lanza un proceso de Python por trabajo
- * y varios a la vez saturan la CPU de un móvil y disparan los bloqueos de las fuentes.
- * El ancho de banda se aprovecha igual porque cada descarga ya usa varias conexiones.
+ * Procesa la cola en primer plano respetando el límite de simultaneidad elegido.
+ * Cada trabajo conserva un processId propio, por lo que se puede cancelar sin afectar a
+ * las demás descargas que estén activas.
  */
 class DownloadService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var worker: Job? = null
+    private val desiredParallelism = MutableStateFlow(DownloadConcurrency.DEFAULT)
+    private val activeProcesses = ConcurrentHashMap<Long, String>()
 
     private lateinit var repository: DownloadRepository
 
@@ -51,13 +55,24 @@ class DownloadService : Service() {
         super.onCreate()
         repository = DownloadRepository.get(this)
         instance = this
+        scope.launch {
+            EnginePreferences.concurrentDownloads(this@DownloadService).collect { value ->
+                desiredParallelism.value = DownloadConcurrency.clamp(value)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_CANCEL_CURRENT -> {
-                cancelCurrent()
-                return START_STICKY
+            ACTION_CANCEL_JOB -> {
+                cancelJob(intent.getLongExtra(EXTRA_JOB_ID, -1L))
+                if (activeProcesses.isEmpty()) stopSelf()
+                return if (activeProcesses.isEmpty()) START_NOT_STICKY else START_STICKY
+            }
+            ACTION_CANCEL_ALL -> {
+                cancelAll()
+                if (activeProcesses.isEmpty()) stopSelf()
+                return if (activeProcesses.isEmpty()) START_NOT_STICKY else START_STICKY
             }
         }
         val notification = buildNotification("Preparando descargas", null, 0f)
@@ -89,22 +104,52 @@ class DownloadService : Service() {
                 EnginePreferences.record(this@DownloadService, result)
             }
 
+            desiredParallelism.value = EnginePreferences.concurrentDownloads(
+                this@DownloadService
+            ).first()
             drainQueue()
             stopSelf()
         }
     }
 
-    private suspend fun drainQueue() {
-        while (!queuePaused.value) {
-            val job = repository.nextQueued() ?: break
-            runJob(job)
+    private suspend fun drainQueue() = supervisorScope {
+        val running = mutableMapOf<Long, Job>()
+
+        while (true) {
+            running.entries.removeAll { it.value.isCompleted }
+
+            if (queuePaused.value) {
+                // Si se reanuda antes de que terminen las activas, este mismo coordinador
+                // continúa. Así la cola no queda varada esperando otro startService.
+                if (running.isEmpty()) break
+                delay(COORDINATOR_TICK_MS)
+                continue
+            }
+
+            while (running.size < desiredParallelism.value) {
+                val queued = repository.nextQueued() ?: break
+
+                // La selección de la fila y su marcado ocurren en este único coordinador.
+                // Así dos ranuras nunca pueden reclamar el mismo trabajo de Room.
+                repository.updateProgress(
+                    queued.id,
+                    DownloadStatus.FETCHING,
+                    0f,
+                    -1,
+                    "Preparando descarga…"
+                )
+                running[queued.id] = launch { runJob(queued) }
+            }
+
+            if (running.isEmpty() && repository.nextQueued() == null) break
+            delay(COORDINATOR_TICK_MS)
         }
     }
 
     private suspend fun runJob(job: DownloadEntity) {
         val processId = "vortex-${job.id}"
-        currentProcessId.value = processId
-        currentJobId.value = job.id
+        activeProcesses[job.id] = processId
+        publishActiveJobs()
 
         val workspace = DestinationStore.workspace(this, job.id)
         workspace.deleteRecursively()
@@ -155,8 +200,11 @@ class DownloadService : Service() {
                 repository.updateProgress(
                     job.id, DownloadStatus.FETCHING, 0f, -1, "Consultando fuente…"
                 )
-                notify(job.url, "Consultando fuente…", 0f)
+                notify(job.id, job.url, "Consultando fuente…", 0f)
                 val summary = YtDlpEngine.fetchInfo(job.url, flatPlaylist = job.playlist)
+                // La consulta ligera no expone processId en la librería. Si se canceló
+                // mientras respondía, no debe arrancar después la descarga pesada.
+                throwIfCancelled(job.id)
                 job.copy(
                     title = summary?.title?.takeIf { it.isNotBlank() } ?: job.url,
                     uploader = summary?.uploader.orEmpty(),
@@ -245,6 +293,7 @@ class DownloadService : Service() {
                     // En la notificación manda el avance de la lista entera: una barra que
                     // vuelve a cero cada dos minutos no dice nada de lo que queda.
                     notify(
+                        job.id,
                         named.title,
                         buildString {
                             if (playlistCount > 1) append("$playlistIndex/$playlistCount · ")
@@ -261,8 +310,10 @@ class DownloadService : Service() {
                 // descartaba aquí, y más adelante se reportaba otro genérico en su lugar.
                 val produced = workspace.walkTopDown()
                     .any { it.isFile && it.length() > 0 && DownloadPublisher.isMedia(it) }
-                if (!produced) throw error
+                if (job.id in cancelledJobs || !produced) throw error
             }
+
+            throwIfCancelled(job.id)
 
             // yt-dlp también puede terminar con éxito sin bajar nada: pasa cuando el
             // filtro de duración descarta los cinco candidatos. Sin esta comprobación se
@@ -285,7 +336,7 @@ class DownloadService : Service() {
                 repository.updateProgress(
                     job.id, DownloadStatus.PROCESSING, 1f, 0, "Etiquetando…"
                 )
-                notify(named.title, "Etiquetando…", 1f)
+                notify(job.id, named.title, "Etiquetando…", 1f)
                 val audio = workspace.walkTopDown()
                     .firstOrNull { it.isFile && Id3Tagger.canTag(it) }
                 if (audio != null) {
@@ -294,7 +345,8 @@ class DownloadService : Service() {
             }
 
             repository.updateProgress(job.id, DownloadStatus.MOVING, 1f, 0, "Guardando en destino…")
-            notify(named.title, "Guardando en destino…", 1f)
+            notify(job.id, named.title, "Guardando en destino…", 1f)
+            throwIfCancelled(job.id)
 
             val treeUri = DestinationStore.observe(this).first()
             val result = DownloadPublisher.publish(this, workspace, treeUri, job.kind)
@@ -343,20 +395,37 @@ class DownloadService : Service() {
             )
             workspace.deleteRecursively()
         } finally {
-            currentProcessId.value = null
-            currentJobId.value = null
+            activeProcesses.remove(job.id)
+            publishActiveJobs()
         }
     }
 
-    private fun cancelCurrent() {
-        val processId = currentProcessId.value ?: return
-        currentJobId.value?.let { cancelledJobs.add(it) }
+    private fun cancelJob(jobId: Long) {
+        val processId = activeProcesses[jobId] ?: return
+        cancelledJobs.add(jobId)
         YtDlpEngine.cancel(processId)
+    }
+
+    private fun cancelAll() {
+        activeProcesses.keys.toList().forEach(::cancelJob)
+    }
+
+    private fun throwIfCancelled(jobId: Long) {
+        if (jobId in cancelledJobs) throw IllegalStateException("Descarga cancelada")
+    }
+
+    private fun publishActiveJobs() {
+        activeIds.value = activeProcesses.keys.toSet()
     }
 
     // --------------------------------------------------------- notificación
 
-    private fun buildNotification(title: String, text: String?, progress: Float): Notification {
+    private fun buildNotification(
+        title: String,
+        text: String?,
+        progress: Float,
+        jobId: Long? = null
+    ): Notification {
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -365,8 +434,10 @@ class DownloadService : Service() {
         )
         val cancel = PendingIntent.getService(
             this,
-            2,
-            Intent(this, DownloadService::class.java).setAction(ACTION_CANCEL_CURRENT),
+            jobId?.hashCode() ?: 2,
+            Intent(this, DownloadService::class.java)
+                .setAction(if (jobId == null) ACTION_CANCEL_ALL else ACTION_CANCEL_JOB)
+                .putExtra(EXTRA_JOB_ID, jobId ?: -1L),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, VortexApp.CHANNEL_DOWNLOADS)
@@ -379,6 +450,19 @@ class DownloadService : Service() {
             .setProgress(100, (progress * 100).toInt(), progress <= 0f)
             .addAction(0, "Cancelar", cancel)
             .build()
+    }
+
+    private fun notify(jobId: Long, title: String, text: String?, progress: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        runCatching {
+            NotificationManagerCompat.from(this)
+                .notify(NOTIFICATION_ID, buildNotification(title, text, progress, jobId))
+        }
     }
 
     private fun notify(title: String, text: String?, progress: Float) {
@@ -398,6 +482,8 @@ class DownloadService : Service() {
         instance = null
         worker?.cancel()
         scope.cancel()
+        activeProcesses.clear()
+        publishActiveJobs()
         super.onDestroy()
     }
 
@@ -405,20 +491,21 @@ class DownloadService : Service() {
         /** Separador de las líneas de error del motor. */
         private const val SEPARATOR = "\n"
 
-        private const val ACTION_CANCEL_CURRENT = "com.vortex.player.action.CANCEL_DOWNLOAD"
+        private const val ACTION_CANCEL_JOB = "com.vortex.player.action.CANCEL_DOWNLOAD"
+        private const val ACTION_CANCEL_ALL = "com.vortex.player.action.CANCEL_ALL_DOWNLOADS"
+        private const val EXTRA_JOB_ID = "job_id"
         private const val NOTIFICATION_ID = 7781
+        private const val COORDINATOR_TICK_MS = 200L
 
         @Volatile
         private var instance: DownloadService? = null
 
-        private val cancelledJobs = mutableSetOf<Long>()
-
-        private val currentProcessId = MutableStateFlow<String?>(null)
-        private val currentJobId = MutableStateFlow<Long?>(null)
+        private val cancelledJobs = ConcurrentHashMap.newKeySet<Long>()
+        private val activeIds = MutableStateFlow<Set<Long>>(emptySet())
         private val paused = MutableStateFlow(false)
 
-        /** Id del trabajo que se está descargando ahora mismo, para resaltarlo en la lista. */
-        val activeJobId: StateFlow<Long?> = currentJobId.asStateFlow()
+        /** Trabajos que tienen un proceso yt-dlp propio en este momento. */
+        val activeJobIds: StateFlow<Set<Long>> = activeIds.asStateFlow()
 
         /**
          * Pausa cooperativa: la transferencia actual termina y no se inicia la siguiente.
@@ -435,10 +522,12 @@ class DownloadService : Service() {
             }
         }
 
-        fun cancelCurrent(context: Context) {
-            context.startService(
-                Intent(context, DownloadService::class.java).setAction(ACTION_CANCEL_CURRENT)
-            )
+        fun cancel(jobId: Long) {
+            instance?.cancelJob(jobId)
+        }
+
+        fun cancelAll() {
+            instance?.cancelAll()
         }
 
         fun setQueuePaused(context: Context, value: Boolean) {

@@ -87,7 +87,7 @@ object SpotifyResolver {
                 "Spotify ha cambiado el formato de su página y ya no se puede leer la lista."
             )
 
-        val entity = entityOf(json, config)
+        val entity = SpotifyEntityParser.entityOf(json, config.entityPaths, kind, id)
             ?: return@withContext SpotifyResult.Error(
                 "Spotify ha cambiado la estructura de la página."
             )
@@ -381,18 +381,6 @@ object SpotifyResolver {
         return runCatching {
             JSONObject(html.substring(jsonStart, jsonEnd).trim())
         }.getOrNull()
-    }
-
-    /** La ruta ha cambiado alguna vez entre versiones del embed; se prueban ambas. */
-    private fun entityOf(root: JSONObject, config: SpotifyEngineConfig): JSONObject? =
-        config.entityPaths.firstNotNullOfOrNull { path -> objectAt(root, path) }
-
-    private fun objectAt(root: JSONObject, path: String): JSONObject? {
-        var current: JSONObject = root
-        for (segment in path.split('/').drop(1)) {
-            current = current.optJSONObject(segment) ?: return null
-        }
-        return current
     }
 
     private fun stringAt(root: JSONObject, path: String): String? {

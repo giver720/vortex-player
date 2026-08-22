@@ -36,7 +36,9 @@ yt-dlp. Busca por texto o pega un enlace, previsualiza listas con miniaturas y e
 elementos bajar. Vídeo hasta 4K o extracción de audio a MP3/M4A/OPUS/FLAC/WAV. Las listas
 de reproducción **crean automáticamente su propia carpeta** con las pistas numeradas; cada
 elemento entra como trabajo independiente, así que un fallo no obliga a repetir la lista.
-El destino lo elige el usuario con el selector de carpetas del sistema.
+El destino lo elige el usuario con el selector de carpetas del sistema. La cola puede
+ejecutar entre **1 y 10 descargas simultáneas**, elegidas con un deslizador o tocando el
+número; cada trabajo activo conserva progreso y cancelación propios.
 
 **Enlaces de Spotify.** Pega una canción, un álbum o una lista y Vórtex lee **sólo los
 metadatos** del catálogo —título, artista, duración y portada—, busca cada tema en
@@ -45,6 +47,8 @@ Spotify va cifrado y no se toca: es el mismo enfoque de spotDL. Cada canción en
 cola por separado, así que una lista de ochenta temas no se pierde porque falle uno. El
 motor de catálogo se actualiza por separado mediante un manifiesto declarativo validado:
 puede adaptarse a cambios de estructura de Spotify sin descargar ni ejecutar código.
+Además, el lector reconoce estados hidratados alternativos y entidades serializadas para
+resistir despliegues A/B que muevan los datos sin previo aviso.
 
 **Aspecto al estilo VLC.** Ajustar, llenar, estirar y relaciones forzadas (16:9, 4:3,
 18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco

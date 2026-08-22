@@ -51,6 +51,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -78,6 +80,7 @@ import com.vortex.player.data.db.DownloadEntity
 import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DestinationStore
+import com.vortex.player.download.DownloadConcurrency
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadLog
 import com.vortex.player.download.DownloadStatus
@@ -90,6 +93,7 @@ import com.vortex.player.download.VideoQuality
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
+import kotlin.math.roundToInt
 
 private enum class QueueFilter(val label: String) {
     ACTIVE("EN CURSO"),
@@ -124,8 +128,9 @@ fun DownloadsScreen(
     val metadata by viewModel.embedMetadata.collectAsStateWithLifecycle()
     val destination by viewModel.destination.collectAsStateWithLifecycle()
     val downloads by viewModel.downloads.collectAsStateWithLifecycle()
-    val activeJobId by viewModel.activeJobId.collectAsStateWithLifecycle()
+    val activeJobIds by viewModel.activeJobIds.collectAsStateWithLifecycle()
     val queuePaused by viewModel.queuePaused.collectAsStateWithLifecycle()
+    val concurrentDownloads by viewModel.concurrentDownloads.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val engineReady by viewModel.engineReady.collectAsStateWithLifecycle()
     val isSpotify by viewModel.isSpotifyLink.collectAsStateWithLifecycle()
@@ -213,7 +218,7 @@ fun DownloadsScreen(
     var visibleLimit by remember(queueFilter, queueQuery) { mutableStateOf(QUEUE_PAGE_SIZE) }
     val visible = filteredJobs.take(visibleLimit)
 
-    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, thumbnail, metadata, sponsorSettings) {
+    val optionsSummary = remember(kind, quality, container, codec, bitrate, playlist, subtitles, thumbnail, metadata, sponsorSettings, concurrentDownloads) {
         buildList {
             add(kind.label)
             if (kind == DownloadKind.VIDEO) {
@@ -227,6 +232,7 @@ fun DownloadsScreen(
             if (thumbnail) add("CARÁTULA")
             if (metadata) add("META")
             if (sponsorSettings.isActive) add("SPONSOR")
+            add("$concurrentDownloads A LA VEZ")
         }.joinToString(" · ")
     }
 
@@ -433,6 +439,13 @@ fun DownloadsScreen(
             }
 
             if (optionsExpanded) item {
+                ParallelDownloadsSection(
+                    value = concurrentDownloads,
+                    onValueChange = viewModel::setConcurrentDownloads
+                )
+            }
+
+            if (optionsExpanded) item {
                 SponsorBlockSection(
                     settings = sponsorSettings,
                     onMode = viewModel::setSponsorMode,
@@ -510,7 +523,7 @@ fun DownloadsScreen(
                 item {
                     QueueOverviewCard(
                         jobs = downloads,
-                        activeJobId = activeJobId,
+                        activeJobIds = activeJobIds,
                         paused = queuePaused,
                         onTogglePause = viewModel::toggleQueuePaused
                     )
@@ -567,8 +580,8 @@ fun DownloadsScreen(
             items(visible, key = { it.id }) { job ->
                 DownloadRow(
                     job = job,
-                    isActive = job.id == activeJobId,
-                    onCancel = viewModel::cancelCurrent,
+                    isActive = job.id in activeJobIds,
+                    onCancel = { viewModel.cancel(job.id) },
                     onRetry = { viewModel.retry(job.id) },
                     onRemove = { viewModel.remove(job.id) }
                 )
@@ -1201,11 +1214,13 @@ private fun OptionsSummaryBar(
 @Composable
 private fun QueueOverviewCard(
     jobs: List<DownloadEntity>,
-    activeJobId: Long?,
+    activeJobIds: Set<Long>,
     paused: Boolean,
     onTogglePause: () -> Unit
 ) {
-    val active = jobs.firstOrNull { it.id == activeJobId }
+    val activeJobs = jobs.filter { it.id in activeJobIds }
+    val active = activeJobs.firstOrNull()
+    val activeCount = activeJobs.size
     val pending = jobs.count { !it.status.isTerminal }
     val queued = jobs.count { it.status == DownloadStatus.QUEUED }
     val completed = jobs.count { it.status == DownloadStatus.COMPLETED }
@@ -1236,6 +1251,7 @@ private fun QueueOverviewCard(
                     text = when {
                         paused && active != null -> "PAUSA PENDIENTE"
                         paused -> "COLA PAUSADA"
+                        activeCount > 1 -> "$activeCount DESCARGAS SIMULTÁNEAS"
                         active != null -> "DESCARGANDO AHORA"
                         pending > 0 -> "PREPARANDO COLA"
                         else -> "TODO LISTO"
@@ -1248,7 +1264,9 @@ private fun QueueOverviewCard(
                     }
                 )
                 Text(
-                    text = active?.title?.ifBlank { active.url }
+                    text = active?.title?.ifBlank { active.url }?.let { title ->
+                        if (activeCount > 1) "$title · y ${activeCount - 1} más" else title
+                    }
                         ?: if (pending > 0) "$queued esperando para descargar" else
                             "$completed descargas completadas",
                     style = MaterialTheme.typography.titleMedium,
@@ -1318,7 +1336,7 @@ private fun QueueOverviewCard(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            QueueMetric("ACTIVAS", pending, VortexPalette.Cyan)
+            QueueMetric("ACTIVAS", activeCount, VortexPalette.Cyan)
             QueueMetric("EN COLA", queued, VortexPalette.TextMid)
             QueueMetric("LISTAS", completed, VortexPalette.Neon)
             QueueMetric("ERRORES", errors, if (errors > 0) VortexPalette.Magenta else VortexPalette.TextLow)
@@ -1412,6 +1430,99 @@ private fun QueueTab(
                 .width(if (selected) 28.dp else 0.dp)
                 .height(2.dp)
                 .background(VortexPalette.Neon)
+        )
+    }
+}
+
+/** Control discreto: arrastrable para explorar y con números para elegir en un toque. */
+@Composable
+private fun ParallelDownloadsSection(
+    value: Int,
+    onValueChange: (Int) -> Unit
+) {
+    var sliderValue by remember(value) { mutableStateOf(value.toFloat()) }
+    val selected = sliderValue.roundToInt().coerceIn(
+        DownloadConcurrency.MIN,
+        DownloadConcurrency.MAX
+    )
+
+    SectionLabel("DESCARGAS SIMULTÁNEAS")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Cyan.copy(alpha = 0.45f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = if (selected == 1) "1 descarga a la vez" else
+                        "$selected descargas a la vez",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = VortexPalette.TextHigh
+                )
+                Text(
+                    text = "Puedes mover el control o tocar directamente un número.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow
+                )
+            }
+            Text(
+                text = selected.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                color = VortexPalette.Graphite,
+                modifier = Modifier
+                    .background(VortexPalette.Cyan, VortexShapes.small)
+                    .padding(horizontal = 13.dp, vertical = 7.dp)
+            )
+        }
+
+        Slider(
+            value = sliderValue,
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = { onValueChange(selected) },
+            valueRange = DownloadConcurrency.MIN.toFloat()..DownloadConcurrency.MAX.toFloat(),
+            steps = DownloadConcurrency.MAX - DownloadConcurrency.MIN - 1,
+            colors = SliderDefaults.colors(
+                thumbColor = VortexPalette.Neon,
+                activeTrackColor = VortexPalette.Cyan,
+                inactiveTrackColor = VortexPalette.GraphiteHigh,
+                activeTickColor = VortexPalette.Graphite,
+                inactiveTickColor = VortexPalette.TextLow
+            ),
+            modifier = Modifier.padding(top = 5.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            (DownloadConcurrency.MIN..DownloadConcurrency.MAX).forEach { option ->
+                Chip(
+                    label = option.toString(),
+                    selected = option == selected,
+                    onClick = {
+                        sliderValue = option.toFloat()
+                        onValueChange(option)
+                    }
+                )
+            }
+        }
+
+        Text(
+            text = when {
+                selected <= 2 -> "Menor consumo de batería, memoria y ancho de banda."
+                selected <= 5 -> "Equilibrio recomendado para playlists y móviles actuales."
+                else -> "Modo intensivo: puede calentar el dispositivo o provocar límites " +
+                    "temporales de YouTube y otras fuentes."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (selected > 5) VortexPalette.Amber else VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 9.dp)
         )
     }
 }

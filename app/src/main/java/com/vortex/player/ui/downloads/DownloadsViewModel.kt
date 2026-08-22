@@ -8,6 +8,7 @@ import com.vortex.player.data.db.DownloadEntity
 import com.vortex.player.download.AudioBitrate
 import com.vortex.player.download.AudioCodec
 import com.vortex.player.download.DestinationStore
+import com.vortex.player.download.DownloadConcurrency
 import com.vortex.player.download.DownloadKind
 import com.vortex.player.download.DownloadRepository
 import com.vortex.player.download.DownloadRequest
@@ -48,8 +49,15 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     val destination: StateFlow<Uri?> = DestinationStore.observe(app)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val activeJobId: StateFlow<Long?> = DownloadService.activeJobId
+    val activeJobIds: StateFlow<Set<Long>> = DownloadService.activeJobIds
     val queuePaused: StateFlow<Boolean> = DownloadService.queuePaused
+
+    val concurrentDownloads: StateFlow<Int> =
+        EnginePreferences.concurrentDownloads(app).stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            DownloadConcurrency.DEFAULT
+        )
 
     private val _url = MutableStateFlow("")
     val url: StateFlow<String> = _url.asStateFlow()
@@ -505,14 +513,14 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun cancelCurrent() = DownloadService.cancelCurrent(getApplication())
+    fun cancel(id: Long) = DownloadService.cancel(id)
 
     fun toggleQueuePaused() {
         DownloadService.setQueuePaused(getApplication(), !queuePaused.value)
         _message.value = when {
             !queuePaused.value -> "Cola reanudada"
-            activeJobId.value != null ->
-                "La cola se detendrá al terminar la descarga actual"
+            activeJobIds.value.isNotEmpty() ->
+                "La cola se detendrá al terminar las descargas activas"
             else -> "Cola pausada"
         }
     }
@@ -544,8 +552,11 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun clearAll() {
         viewModelScope.launch {
-            DownloadService.cancelCurrent(getApplication())
+            val wasPaused = queuePaused.value
+            DownloadService.setQueuePaused(getApplication(), true)
+            DownloadService.cancelAll()
             repository.clearAll()
+            if (!wasPaused) DownloadService.setQueuePaused(getApplication(), false)
             _message.value = "Cola vaciada"
         }
     }
@@ -553,8 +564,11 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
     /** Quita lo pendiente y conserva el historial de lo ya terminado. */
     fun cancelPending() {
         viewModelScope.launch {
-            DownloadService.cancelCurrent(getApplication())
+            val wasPaused = queuePaused.value
+            DownloadService.setQueuePaused(getApplication(), true)
+            DownloadService.cancelAll()
             repository.clearPending()
+            if (!wasPaused) DownloadService.setQueuePaused(getApplication(), false)
             _message.value = "Descargas pendientes canceladas"
         }
     }
@@ -595,6 +609,16 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAutoUpdate(enabled: Boolean) {
         viewModelScope.launch { EnginePreferences.setAutoUpdate(getApplication(), enabled) }
+    }
+
+    fun setConcurrentDownloads(value: Int) {
+        viewModelScope.launch {
+            val safeValue = DownloadConcurrency.clamp(value)
+            EnginePreferences.setConcurrentDownloads(getApplication(), safeValue)
+            // El servicio observa este ajuste y adapta las ranuras sin interrumpir los
+            // procesos que ya están trabajando.
+            _message.value = "$safeValue descarga${if (safeValue == 1) "" else "s"} a la vez"
+        }
     }
 
     /** Actualiza sólo las reglas declarativas del catálogo; nunca descarga código. */

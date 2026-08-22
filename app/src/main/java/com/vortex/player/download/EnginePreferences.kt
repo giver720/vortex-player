@@ -3,6 +3,7 @@ package com.vortex.player.download
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -24,6 +25,7 @@ object EnginePreferences {
     private val LAST_UPDATE_AT = longPreferencesKey("last_engine_update_at")
     private val LAST_UPDATE_RESULT = stringPreferencesKey("last_engine_update_result")
     private val AUTO_UPDATE = booleanPreferencesKey("auto_update_engine")
+    private val CONCURRENT_DOWNLOADS = intPreferencesKey("concurrent_downloads")
 
     /** Una vez al día es suficiente: yt-dlp publica versiones cada pocos días. */
     private const val INTERVAL_MS = 24 * 60 * 60 * 1000L
@@ -34,8 +36,20 @@ object EnginePreferences {
     fun lastResult(context: Context): Flow<String?> =
         context.engineDataStore.data.map { it[LAST_UPDATE_RESULT] }
 
+    /** Cantidad de procesos yt-dlp que pueden trabajar al mismo tiempo. */
+    fun concurrentDownloads(context: Context): Flow<Int> =
+        context.engineDataStore.data.map { prefs ->
+            DownloadConcurrency.clamp(prefs[CONCURRENT_DOWNLOADS] ?: DownloadConcurrency.DEFAULT)
+        }
+
     suspend fun setAutoUpdate(context: Context, enabled: Boolean) {
         context.engineDataStore.edit { it[AUTO_UPDATE] = enabled }
+    }
+
+    suspend fun setConcurrentDownloads(context: Context, value: Int) {
+        context.engineDataStore.edit {
+            it[CONCURRENT_DOWNLOADS] = DownloadConcurrency.clamp(value)
+        }
     }
 
     suspend fun shouldAutoUpdate(context: Context): Boolean {

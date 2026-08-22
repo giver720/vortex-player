@@ -1,0 +1,7 @@
+Parallel downloads and a more resilient Spotify engine.
+
+• Choose 1 to 10 simultaneous downloads with a slider or numbered buttons.
+• Change the limit live without interrupting active downloads.
+• Track multiple active jobs and cancel each one independently.
+• Queue pause, resume, and clear actions now work correctly with parallel jobs.
+• Spotify recognizes alternate layouts and serialized data during A/B rollouts.
