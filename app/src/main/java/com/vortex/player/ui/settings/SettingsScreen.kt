@@ -116,8 +116,6 @@ fun SettingsScreen(
                 )
             }
 
-            item { MasterSwitch(settings, viewModel::setEnabled) }
-
             val caps = capabilities
             if (caps == null) {
                 item { Notice("Pon algo a sonar para ver lo que admite tu dispositivo.") }
@@ -128,13 +126,15 @@ fun SettingsScreen(
             ) {
                 item {
                     Notice(
-                        "Ahora mismo reproduce el motor VLC, que no expone una sesión de " +
-                            "audio a la que aplicar efectos. Estos ajustes funcionan con " +
-                            "Media3, que es el motor habitual."
+                        "VLC es el motor único y no expone una sesión de audio Android " +
+                            "a la que aplicar estos efectos. Ecualizador, refuerzo de " +
+                            "graves y virtualizador permanecen desactivados."
                     )
                 }
                 return@LazyColumn
             }
+
+            item { MasterSwitch(settings, viewModel::setEnabled) }
 
             item { ScopeSelector(settings, caps, viewModel::setScope) }
 

@@ -41,15 +41,12 @@ class VlcPlayer(
     private val libVlc: LibVLC = LibVLC(
         context,
         arrayListOf(
-            // Sin descarte de fotogramas: preferimos fidelidad a suavidad, que es
-            // justo lo que se le pide al motor de respaldo con ficheros raros.
-            "--no-drop-late-frames",
-            "--no-skip-frames",
             "--rtsp-tcp",
             "--http-reconnect",
+            "--network-caching=1500",
+            "--file-caching=300",
             // Permite cambiar la velocidad sin que las voces suenen a helio.
-            "--audio-time-stretch",
-            "--avcodec-skiploopfilter=0"
+            "--audio-time-stretch"
         )
     )
 

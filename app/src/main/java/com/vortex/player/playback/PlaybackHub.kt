@@ -11,8 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Punto único de encuentro entre el servicio de reproducción y todas las superficies
  * (reproductor, ventana flotante, biblioteca). Como todo vive en el mismo proceso,
  * compartir el [Player] directamente evita el ida y vuelta de un `MediaController`
- * y, sobre todo, permite que la UI siga viendo el mismo estado cuando el motor cambia
- * de Media3 a VLC a mitad de reproducción.
+ * y permite que todas las superficies observen el mismo estado de VLC.
  */
 object PlaybackHub {
 
@@ -50,8 +49,8 @@ object PlaybackHub {
 
     /**
      * Repetición y aleatorio. Se guardan aquí, y no se leen del `Player`, porque son
-     * preferencias del usuario que sobreviven al cambio de motor y a que no haya nada
-     * sonando: el motor es sólo quien las obedece.
+     * preferencias del usuario que sobreviven a que no haya nada sonando: VLC es quien
+     * las obedece cuando vuelve a arrancar.
      */
     private val _repeat = MutableStateFlow(RepeatMode.OFF)
     val repeat: StateFlow<RepeatMode> = _repeat.asStateFlow()

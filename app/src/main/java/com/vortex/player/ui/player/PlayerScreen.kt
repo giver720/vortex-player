@@ -286,9 +286,8 @@ fun PlayerScreen(
 }
 
 /**
- * Superficie de vídeo. El contenedor es un [AspectRatioFrameLayout] de Media3: es quien
- * sabe encajar un 16:9 en una pantalla 9:20 sin deformarlo, y funciona igual para las dos
- * superficies que le metemos dentro (`SurfaceView` en Media3, `VLCVideoLayout` en VLC).
+ * Superficie de vídeo. [AspectRatioFrameLayout] conserva el encuadre elegido y dentro se
+ * monta la única salida disponible, [org.videolan.libvlc.util.VLCVideoLayout].
  */
 @OptIn(UnstableApi::class)
 @Composable

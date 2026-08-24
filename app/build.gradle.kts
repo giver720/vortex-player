@@ -22,8 +22,8 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.20.1"
+        versionCode = 28
+        versionName = "0.21.0"
         // El Client ID identifica la app y es público. El Client Secret nunca entra al APK:
         // Android autentica con Authorization Code + PKCE.
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"511ae080967c4da7b98933258ba1b27b\"")
@@ -123,9 +123,6 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.exoplayer.hls)
-    implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.common)

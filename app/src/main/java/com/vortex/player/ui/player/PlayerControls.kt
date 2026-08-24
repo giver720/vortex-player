@@ -160,7 +160,7 @@ fun ControlsOverlay(
                     Text(
                         text = engineName.uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (engineName == "VLC") VortexPalette.Amber else VortexPalette.NeonDim
+                        color = VortexPalette.Amber
                     )
                     if (speed != 1f) {
                         Text(

@@ -55,7 +55,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { AudioPreferences.observe(app, it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, AudioSettings())
 
-    /** `null` mientras no haya reproducción; sin capacidades si el motor activo es VLC. */
+    /** `null` sin servicio; vacío cuando VLC está activo y no ofrece sesión de efectos. */
     val capabilities: StateFlow<AudioCapabilities?> = PlaybackHub.audioCapabilities
 
     private fun update(transform: (AudioSettings) -> AudioSettings) {

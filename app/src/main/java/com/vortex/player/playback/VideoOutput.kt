@@ -11,12 +11,12 @@ data class TrackOption(
 )
 
 /**
- * Lo que Media3 no cubre de forma uniforme entre motores: pistas, salida de vídeo y
- * el interruptor de solo-audio. Cada motor lo implementa a su manera y la UI sólo ve esto.
+ * Controles de VLC que no forman parte del contrato [androidx.media3.common.Player]:
+ * pistas, salida de vídeo, subtítulos externos y el interruptor de solo-audio.
  */
 interface EngineControls {
 
-    /** Motor activo, para mostrarlo en el HUD y saber a quién culpar si algo falla. */
+    /** Nombre del motor único que se muestra en el HUD. */
     val engineName: String
 
     val audioTracks: List<TrackOption>

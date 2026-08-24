@@ -1,28 +1,27 @@
 package com.vortex.player.playback
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import androidx.media3.common.AudioAttributes
+import android.os.PowerManager
+import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.vortex.player.MainActivity
-import com.vortex.player.audio.AudioEnhancer
-import com.vortex.player.audio.AudioOutput
-import com.vortex.player.audio.AudioPreferences
-import com.vortex.player.audio.AudioScope
-import com.vortex.player.audio.AudioSettings
+import com.vortex.player.audio.AudioCapabilities
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaRepository
 import kotlinx.coroutines.CoroutineScope
@@ -30,67 +29,90 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
 /**
- * Servicio de reproducción con doble motor.
+ * Servicio de reproducción con VLC como único motor multimedia.
  *
- * Media3 lleva la voz cantante porque es más eficiente y se integra con la sesión
- * multimedia sin fricción. Cuando falla por un códec o un contenedor que no entiende,
- * el servicio rescata la posición exacta y levanta libVLC en su lugar: para el usuario
- * el vídeo sólo parpadea un instante y sigue, sin diálogos de error.
+ * Media3 permanece únicamente como contrato de [Player] y [MediaSession] para que Android
+ * conserve notificación, pantalla de bloqueo y controles externos. Todo el audio y vídeo
+ * se abre, decodifica y reproduce en libVLC.
  */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
 
-    private lateinit var exoPlayer: ExoPlayer
-    private lateinit var exoControls: ExoEngineControls
-    private var vlcPlayer: VlcPlayer? = null
+    private lateinit var vlcPlayer: VlcPlayer
     private var mediaSession: MediaSession? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repository: MediaRepository
 
-    private val enhancer = AudioEnhancer()
-    private var audioSettings = AudioSettings()
+    private val audioManager: AudioManager by lazy {
+        getSystemService(AUDIO_SERVICE) as AudioManager
+    }
+    private val wakeLock: PowerManager.WakeLock by lazy {
+        (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Vortex:VlcPlayback")
+            .apply { setReferenceCounted(false) }
+    }
+    private var hasAudioFocus = false
+    private var resumeOnFocusGain = false
 
-    /**
-     * Sesión de audio propia, generada por nosotros e impuesta a ExoPlayer.
-     *
-     * Se hace así en vez de esperar a que el reproductor anuncie la suya porque ese aviso
-     * no llega de forma fiable, y sin identificador de sesión no hay dónde enganchar los
-     * efectos: el ecualizador se quedaba sin aplicar y la pantalla de ajustes no mostraba
-     * ninguna capacidad aunque hubiera música sonando.
-     *
-     * `generateAudioSessionId` puede devolver ERROR (-1) si el sistema no puede darla. En
-     * ese caso no se le impone nada a ExoPlayer: que se genere la suya y la anuncie por
-     * `onAudioSessionIdChanged`, que es cuando se engancharán los efectos. Antes se le
-     * asignaba el -1 tal cual y ya no había sesión válida en toda la reproducción.
-     */
-    private val audioSessionId: Int by lazy {
-        val manager = getSystemService(AUDIO_SERVICE) as AudioManager
-        runCatching { manager.generateAudioSessionId() }.getOrDefault(AudioManager.ERROR)
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                hasAudioFocus = true
+                if (resumeOnFocusGain) {
+                    resumeOnFocusGain = false
+                    vlcPlayer.play()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                hasAudioFocus = false
+                resumeOnFocusGain = false
+                vlcPlayer.pause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                resumeOnFocusGain = vlcPlayer.playWhenReady
+                hasAudioFocus = false
+                vlcPlayer.pause()
+            }
+        }
     }
 
-    private val hasOwnSession: Boolean get() = audioSessionId > 0
+    private val audioFocusRequest: AudioFocusRequest? by lazy {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return@lazy null
+        val attributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MOVIE)
+            .build()
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(attributes)
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener(audioFocusListener, handler)
+            .build()
+    }
 
-    private var usingVlc = false
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                resumeOnFocusGain = false
+                vlcPlayer.pause()
+            }
+        }
+    }
+
     private var audioOnly = false
     private var sleepRunnable: Runnable? = null
     private var order = PlaybackPrefs()
 
-    /** Evita rebotar entre motores si VLC también falla con el mismo medio. */
-    private var fallbackAttemptedFor: String? = null
-
     override fun onCreate() {
         super.onCreate()
         repository = MediaRepository.get(this)
-        exoPlayer = buildExoPlayer()
-        exoControls = ExoEngineControls(this, exoPlayer)
-        mediaSession = MediaSession.Builder(this, exoPlayer)
+        vlcPlayer = VlcPlayer(this).apply { addListener(playerListener) }
+        mediaSession = MediaSession.Builder(this, vlcPlayer)
             .setSessionActivity(sessionActivityIntent())
             .build()
             // Sin este registro explícito, Media3 nunca publica la notificación multimedia
@@ -99,19 +121,24 @@ class PlaybackService : MediaSessionService() {
             // a través de PlaybackHub. El resultado era que el sistema mataba la
             // reproducción con «Stopping service due to app idle» a los dos minutos.
             .also { addSession(it) }
-        PlaybackHub.setPlayer(exoPlayer, exoControls)
+        PlaybackHub.setPlayer(vlcPlayer, vlcPlayer)
+        // libVLC no publica un id de sesión Android al que enganchar los efectos de audio.
+        PlaybackHub.setAudioCapabilities(AudioCapabilities())
+        ContextCompat.registerReceiver(
+            this,
+            noisyReceiver,
+            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         instance = this
         startPositionPersistence()
-        startAudioEnhancer()
         startOrderPreferences()
     }
 
     /**
      * Repetición y aleatorio, recuperados de la sesión anterior y volcados al motor.
      *
-     * Se observan en vez de leerse una sola vez porque el motor puede cambiar a mitad de
-     * reproducción: [applyOrder] se vuelve a llamar en cada cambio y así VLC hereda lo que
-     * el usuario había elegido en Media3, sin que la cola se ponga a sonar en orden.
+     * Se observan para que cualquier cambio de la interfaz llegue inmediatamente a VLC.
      */
     private fun startOrderPreferences() {
         scope.launch {
@@ -125,7 +152,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun applyOrder() {
-        val player = currentPlayer
+        val player = vlcPlayer
         if (player.isCommandAvailable(Player.COMMAND_SET_REPEAT_MODE)) {
             player.repeatMode = order.repeat.playerMode
         }
@@ -145,82 +172,6 @@ class PlaybackService : MediaSessionService() {
         applyOrder()
         scope.launch { PlaybackPreferences.save(this@PlaybackService, prefs) }
     }
-
-    /**
-     * Mantiene los efectos de audio enganchados a la sesión de ExoPlayer.
-     *
-     * La sesión cambia cuando el reproductor recrea su salida, así que hay que reengancharse
-     * cada vez; si no, los ajustes dejan de tener efecto en la segunda canción sin que nada
-     * lo indique.
-     */
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private fun startAudioEnhancer() {
-        // Sin sesión propia no se engancha nada todavía: se espera al aviso del reproductor.
-        if (hasOwnSession) refreshAudioSession(audioSessionId)
-        scope.launch {
-            // Con perfiles por salida, conectar unos auriculares cambia el juego de ajustes
-            // que se lee; sin ellos se usa el de siempre, sin sufijo, que es el que ya
-            // tenía guardado quien venga de una versión anterior.
-            combine(
-                AudioPreferences.observePerOutput(this@PlaybackService),
-                AudioOutput.observe(this@PlaybackService)
-            ) { perOutput, output -> output.takeIf { perOutput } }
-                .flatMapLatest { profile ->
-                    AudioPreferences.observe(this@PlaybackService, profile)
-                }
-                .collect { settings ->
-                    val scopeChanged = settings.scope != audioSettings.scope
-                    audioSettings = settings
-                    // Cambiar de ámbito significa engancharse a otra sesión distinta, así
-                    // que hay que rehacer la cadena entera, no sólo reajustar sus valores.
-                    if (scopeChanged) {
-                        refreshAudioSession(effectiveSessionId)
-                    } else {
-                        enhancer.apply(settings)
-                    }
-                }
-        }
-    }
-
-    /**
-     * Sesión sobre la que están enganchados los efectos ahora mismo.
-     *
-     * Puede no ser la nuestra: si el sistema no concede una, la pone ExoPlayer y llega por
-     * `onAudioSessionIdChanged`. Se recuerda aquí para que reenganchar por cualquier otro
-     * motivo —cambio de ámbito, vuelta desde VLC— no la pise con una que ya no vale.
-     */
-    private var effectiveSessionId: Int = 0
-
-    private fun refreshAudioSession(sessionId: Int) {
-        effectiveSessionId = sessionId
-        val capabilities = enhancer.attach(
-            playerSessionId = sessionId,
-            systemWide = audioSettings.scope == AudioScope.SYSTEM
-        )
-        PlaybackHub.setAudioCapabilities(capabilities)
-        enhancer.apply(audioSettings)
-    }
-
-    private fun buildExoPlayer(): ExoPlayer =
-        ExoPlayer.Builder(this)
-            .setRenderersFactory(
-                DefaultRenderersFactory(this)
-                    // Si el decodificador por hardware falla, se prueba el de software
-                    // antes de rendirse y saltar a VLC.
-                    .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-                    .setEnableDecoderFallback(true)
-            )
-            .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
-            .apply {
-                // Sin esto, el modo solo-audio se corta al apagar la pantalla.
-                setWakeMode(C.WAKE_MODE_NETWORK)
-                // Sólo se impone si el sistema concedió una de verdad; si no, ExoPlayer
-                // genera la suya y la anuncia por `onAudioSessionIdChanged`.
-                if (hasOwnSession) audioSessionId = this@PlaybackService.audioSessionId
-                addListener(playerListener)
-            }
 
     private fun sessionActivityIntent(): PendingIntent =
         PendingIntent.getActivity(
@@ -246,102 +197,72 @@ class PlaybackService : MediaSessionService() {
 
     private fun startRequest(request: PlayRequest) {
         PlaybackHub.setQueue(request.entries, request.startIndex, request.positionMs)
-        fallbackAttemptedFor = null
         audioOnly = request.audioOnly
         PlaybackHub.setAudioOnly(audioOnly)
 
-        // Todo empieza en Media3; VLC sólo entra si Media3 se atraganta.
-        if (usingVlc) switchBackToExo()
-
         val items = request.entries.map { it.toMediaItem() }
-        exoPlayer.setMediaItems(items, request.startIndex, request.positionMs)
+        vlcPlayer.setMediaItems(items, request.startIndex, request.positionMs)
         // Después de poner la cola: el orden aleatorio se calcula sobre los medios ya
         // cargados, así que hacerlo antes no barajaría nada.
         applyOrder()
-        exoControls.setVideoEnabled(!audioOnly)
-        exoPlayer.prepare()
-        exoPlayer.playWhenReady = true
+        vlcPlayer.setVideoEnabled(!audioOnly)
+        vlcPlayer.prepare()
+        vlcPlayer.playWhenReady = true
     }
 
-    // ------------------------------------------------------- cambio de motor
+    // ---------------------------------------------------------- eventos VLC
 
     private val playerListener = object : Player.Listener {
-        override fun onPlayerError(error: PlaybackException) {
-            val currentId = currentPlayer.currentMediaItem?.mediaId
-            if (usingVlc || !error.isEngineFallbackWorthy() || currentId == null) return
-            if (fallbackAttemptedFor == currentId) return
-            fallbackAttemptedFor = currentId
-            switchToVlc()
-        }
-
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            PlaybackHub.setCurrentIndex(currentPlayer.currentMediaItemIndex)
-            // Cada medio merece su propia oportunidad con Media3.
-            fallbackAttemptedFor = null
-            if (usingVlc) switchBackToExo()
+            PlaybackHub.setCurrentIndex(vlcPlayer.currentMediaItemIndex)
         }
 
-        override fun onAudioSessionIdChanged(audioSessionId: Int) {
-            refreshAudioSession(audioSessionId)
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (playWhenReady) {
+                if (!requestAudioFocus()) vlcPlayer.pause()
+            } else if (!resumeOnFocusGain) {
+                abandonAudioFocus()
+            }
         }
-    }
 
-    private fun switchToVlc() {
-        val items = (0 until exoPlayer.mediaItemCount).map { exoPlayer.getMediaItemAt(it) }
-        val index = exoPlayer.currentMediaItemIndex.coerceAtLeast(0)
-        val position = exoPlayer.currentPosition.coerceAtLeast(0L)
-
-        exoPlayer.stop()
-        exoControls.detachVideoOutput()
-
-        val vlc = VlcPlayer(this).also { vlcPlayer = it }
-        vlc.addListener(vlcListener)
-        vlc.setMediaItems(items, index, position)
-        vlc.setVideoEnabled(!audioOnly)
-        vlc.prepare()
-        vlc.playWhenReady = true
-
-        usingVlc = true
-        mediaSession?.player = vlc
-        PlaybackHub.setPlayer(vlc, vlc)
-        applyOrder()
-        // libVLC no expone sesión de audio: los efectos del sistema no le llegan.
-        enhancer.release()
-        PlaybackHub.setAudioCapabilities(null)
-    }
-
-    private fun switchBackToExo() {
-        val vlc = vlcPlayer ?: return
-        vlc.removeListener(vlcListener)
-        vlc.release()
-        vlcPlayer = null
-        usingVlc = false
-        mediaSession?.player = exoPlayer
-        PlaybackHub.setPlayer(exoPlayer, exoControls)
-        applyOrder()
-        // La que esté valiendo, que no tiene por qué ser la nuestra.
-        refreshAudioSession(effectiveSessionId)
-    }
-
-    private val vlcListener = object : Player.Listener {
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            PlaybackHub.setCurrentIndex(currentPlayer.currentMediaItemIndex)
+        // Es un servicio multimedia visible: el lock dura exactamente lo que VLC está
+        // reproduciendo y también se libera de forma defensiva en onDestroy().
+        @SuppressLint("Wakelock", "WakelockTimeout")
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) {
+                if (!wakeLock.isHeld) wakeLock.acquire()
+            } else if (wakeLock.isHeld) {
+                wakeLock.release()
+            }
         }
     }
 
-    private val currentPlayer: Player
-        get() = vlcPlayer ?: exoPlayer
+    private fun requestAudioFocus(): Boolean {
+        if (hasAudioFocus) return true
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioManager.requestAudioFocus(requireNotNull(audioFocusRequest))
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
+        hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        return hasAudioFocus
+    }
 
-    private fun PlaybackException.isEngineFallbackWorthy(): Boolean = errorCode in setOf(
-        PlaybackException.ERROR_CODE_DECODING_FAILED,
-        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
-        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
-    )
+    private fun abandonAudioFocus() {
+        if (!hasAudioFocus) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioManager.abandonAudioFocusRequest(requireNotNull(audioFocusRequest))
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(audioFocusListener)
+        }
+        hasAudioFocus = false
+    }
 
     // ------------------------------------------------------------ funciones
 
@@ -364,7 +285,7 @@ class PlaybackService : MediaSessionService() {
             return
         }
         val runnable = Runnable {
-            currentPlayer.pause()
+            vlcPlayer.pause()
             PlaybackHub.setSleepAt(null)
         }
         sleepRunnable = runnable
@@ -380,7 +301,7 @@ class PlaybackService : MediaSessionService() {
         scope.launch {
             while (true) {
                 delay(4_000)
-                val player = currentPlayer
+                val player = vlcPlayer
                 val entry = PlaybackHub.currentEntry.value
                 PlaybackHub.setPosition(player.currentPosition)
                 if (entry != null && player.isPlaying && player.duration > 0) {
@@ -395,7 +316,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun persistNow() {
-        val player = currentPlayer
+        val player = vlcPlayer
         // La posición se rescata siempre, aunque no haya duración todavía: es el último
         // instante en que se puede leer antes de soltar el motor, y de él depende que
         // reanudar continúe donde estaba en vez de empezar de cero.
@@ -411,7 +332,7 @@ class PlaybackService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Cerrar la app desde recientes no debe cortar el audio: es justo el caso
         // de uso de "escuchar un vídeo como si fuera un podcast".
-        if (!currentPlayer.isPlaying) {
+        if (!vlcPlayer.isPlaying) {
             persistNow()
             stopSelf()
         }
@@ -420,16 +341,15 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         persistNow()
         sleepRunnable?.let { handler.removeCallbacks(it) }
-        enhancer.release()
+        runCatching { unregisterReceiver(noisyReceiver) }
+        abandonAudioFocus()
+        if (wakeLock.isHeld) wakeLock.release()
         PlaybackHub.setAudioCapabilities(null)
         scope.cancel()
-        mediaSession?.run {
-            player.release()
-            release()
-        }
+        mediaSession?.release()
         mediaSession = null
-        vlcPlayer?.release()
-        vlcPlayer = null
+        vlcPlayer.removeListener(playerListener)
+        vlcPlayer.release()
         PlaybackHub.setPlayer(null, null)
         instance = null
         super.onDestroy()

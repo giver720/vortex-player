@@ -1,6 +1,6 @@
 # Vórtex
 
-Reproductor de medios para Android con doble motor, ventana flotante y descargas
+Reproductor de medios para Android con motor VLC, ventana flotante y descargas
 integradas. Pensado para plantarle cara a VLC y MX Player sin heredar sus interfaces.
 
 <p align="center">
@@ -11,21 +11,15 @@ integradas. Pensado para plantarle cara a VLC y MX Player sin heredar sus interf
 
 ## Qué hace distinto
 
-**Dos motores, una sola sesión.** Media3/ExoPlayer lleva la reproducción normal porque es
-más eficiente y se integra con el sistema sin fricción. Cuando se topa con un códec o un
-contenedor que no entiende, Vórtex rescata la posición exacta y levanta **libVLC** en su
-lugar. El usuario ve un parpadeo y el vídeo sigue; no hay diálogo de error. La insignia
-`MEDIA3` / `VLC` del HUD dice en todo momento quién está reproduciendo.
-
-Técnicamente esto es posible porque libVLC va envuelto en un `SimpleBasePlayer` de Media3
-(`playback/VlcPlayer.kt`), así que ambos motores hablan la misma interfaz `Player` y
-comparten una única `MediaSession`. Notificación, pantalla de bloqueo, mandos Bluetooth,
-ventana flotante y reproductor funcionan igual con cualquiera de los dos.
+**VLC en todo momento.** libVLC es el único motor que abre, decodifica y reproduce audio
+y vídeo. El contenedor `SimpleBasePlayer` mantiene la integración con `MediaSession`, por
+lo que notificación, pantalla de bloqueo, mandos Bluetooth, ventana flotante y controles
+de Android continúan funcionando sin introducir un segundo motor multimedia.
 
 **Un MP4 suena como un MP3.** El modo solo-audio apaga la decodificación de vídeo sin
-tocar el audio ni la posición: en Media3 desactivando el tipo de pista en el selector, en
-VLC con `setVideoTrackEnabled(false)`. Se puede activar desde la biblioteca, desde el
-reproductor **y desde la propia ventana flotante**, sin cortar el sonido.
+tocar el audio ni la posición: VLC desactiva la pista con `setVideoTrackEnabled(false)`.
+Se puede activar desde la biblioteca, desde el reproductor **y desde la propia ventana
+flotante**, sin cortar el sonido.
 
 **Ventana flotante de verdad.** No es el PiP del sistema (que también está): es una
 ventana propia por encima de cualquier app, que se arrastra con un dedo, se redimensiona
@@ -156,10 +150,9 @@ Sin ese fichero el proyecto compila igual; las builds de release simplemente sal
 ```
 app/src/main/java/com/vortex/player/
 ├── data/            Biblioteca (MediaStore) y persistencia (Room)
-├── playback/        Motores, abstracción de pistas y MediaSessionService
+├── playback/        Motor VLC, abstracción de pistas y MediaSessionService
 │   ├── VlcPlayer.kt         libVLC expuesto como Player de Media3
-│   ├── ExoEngineControls.kt Pistas y salida de vídeo en Media3
-│   └── PlaybackService.kt   Sesión única + conmutación de motor
+│   └── PlaybackService.kt   Sesión multimedia con VLC como motor único
 ├── popup/           Ventana flotante (overlay + Compose)
 ├── download/        yt-dlp, cola, destino y publicación en la mediateca
 ├── spotify/         Catálogo, reglas actualizables, paginación y etiquetas

@@ -47,8 +47,7 @@ import com.vortex.player.ui.theme.VortexShapes
  *
  * Es donde vive la firma funcional de Vórtex: el interruptor de solo-audio y el salto
  * a ventana flotante están a un toque desde la biblioteca, sin tener que entrar al
- * reproductor. La insignia del motor (MEDIA3 / VLC) es deliberadamente visible: si un
- * fichero raro obliga al cambio, el usuario lo ve en lugar de sufrir un fallo silencioso.
+ * reproductor. La insignia VLC deja claro qué motor único está reproduciendo.
  */
 @Composable
 fun NowPlayingDock(
@@ -122,11 +121,7 @@ fun NowPlayingDock(
                         Text(
                             text = controls?.engineName?.uppercase() ?: "—",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (controls?.engineName == "VLC") {
-                                VortexPalette.Amber
-                            } else {
-                                VortexPalette.NeonDim
-                            }
+                            color = VortexPalette.Amber
                         )
                         Text(
                             text = formatDuration(uiState.positionMs) + " / " +
