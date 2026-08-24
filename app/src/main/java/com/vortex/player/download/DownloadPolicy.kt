@@ -59,7 +59,9 @@ object DownloadRetryPolicy {
         val permanent = listOf(
             "private video", "video unavailable", "not available in your country",
             "copyright", "members-only", "age-restricted", "unsupported url",
-            "libera espacio", "sólo quedan", "margen de seguridad", "destino no"
+            "libera espacio", "sólo quedan", "margen de seguridad", "destino no",
+            "confirm you're not a bot", "confirm you’re not a bot", "use --cookies",
+            "modo automático sin cuenta", "known to use drm protection", "drm protected"
         )
         return permanent.none(value::contains)
     }
@@ -68,6 +70,25 @@ object DownloadRetryPolicy {
         val value = message.lowercase()
         return "requested format is not available" in value ||
             "unable to merge" in value || "not compatible with" in value
+    }
+}
+
+/** Conserva sólo las líneas que explican por qué no quedó un archivo reproducible. */
+object DownloadDiagnostics {
+    private val warningClues = listOf(
+        "javascript", "challenge", "format", "ffmpeg", "postprocess",
+        "thumbnail", "drm", "sign in", "requested", "unable to"
+    )
+
+    fun relevantLine(line: String): String? {
+        val trimmed = line.trim()
+        if (trimmed.isBlank()) return null
+        if (trimmed.startsWith("ERROR", ignoreCase = true)) return trimmed
+        val lower = trimmed.lowercase()
+        val usefulWarning = trimmed.startsWith("WARNING", ignoreCase = true) &&
+            warningClues.any(lower::contains)
+        val conversionFailure = "conversion failed" in lower
+        return trimmed.takeIf { usefulWarning || conversionFailure }
     }
 }
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 
 /**
@@ -44,13 +45,19 @@ object SpotifyResolver {
     private val LINK = Regex(
         """(?:open\.spotify\.com/(?:intl-[a-z-]+/)?|spotify:)(track|album|playlist)[/:]([A-Za-z0-9]+)"""
     )
-    private val SHORT_LINK = Regex("""https?://(?:spotify\.link|spoti\.fi)/[A-Za-z0-9_-]+""")
+    private val SHORT_LINK = Regex(
+        """https?://(?:(?:spotify\.link|spoti\.fi)/[A-Za-z0-9_-]+|open\.spotify\.com/s/[A-Za-z0-9_-]+)""",
+        RegexOption.IGNORE_CASE
+    )
 
     @Volatile private var cachedToken: String? = null
     @Volatile private var cachedTokenAt: Long = 0L
 
-    fun isSpotifyLink(input: String): Boolean =
-        LINK.containsMatchIn(input) || SHORT_LINK.containsMatchIn(input)
+    fun isSpotifyLink(input: String): Boolean {
+        if (LINK.containsMatchIn(input) || SHORT_LINK.containsMatchIn(input)) return true
+        val host = runCatching { URI(input.trim()).host?.lowercase() }.getOrNull()
+        return host == "open.spotify.com" || host == "spotify.link" || host == "spoti.fi"
+    }
 
     /**
      * Resuelve el enlace. Las canciones llegan por bloques a [onPage] conforme se
@@ -65,8 +72,15 @@ object SpotifyResolver {
         onPage: (suspend (folder: String?, page: List<SpotifyTrack>) -> Unit)? = null
     ): SpotifyResult = withContext(Dispatchers.IO) {
         val match = LINK.find(input)
-            ?: SHORT_LINK.find(input)?.value?.let(::expandShortLink)?.let(LINK::find)
-            ?: return@withContext SpotifyResult.Error("Ese enlace de Spotify no se reconoce")
+            ?: input.takeIf(::isSpotifyLink)?.let(::expandShortLink)?.let(LINK::find)
+            ?: return@withContext SpotifyResult.Error(
+                if (SHORT_LINK.containsMatchIn(input)) {
+                    "Spotify no reveló el destino de ese enlace corto. Ábrelo en Spotify y " +
+                        "usa Compartir → Copiar enlace en la canción, álbum o playlist."
+                } else {
+                    "Ese enlace de Spotify no contiene una canción, álbum o playlist compatible."
+                }
+            )
 
         val kindName = match.groupValues[1]
         val id = match.groupValues[2]

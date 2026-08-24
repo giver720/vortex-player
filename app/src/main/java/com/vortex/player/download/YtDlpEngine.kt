@@ -92,20 +92,27 @@ object YtDlpEngine {
      * Consulta metadatos sin descargar. Para listas se pide `--flat-playlist`, que evita
      * resolver cada elemento y devuelve el título de la lista en un par de segundos.
      */
-    suspend fun fetchInfo(url: String, flatPlaylist: Boolean): VideoSummary? =
+    suspend fun fetchInfo(context: Context, url: String, flatPlaylist: Boolean): VideoSummary? =
         withContext(Dispatchers.IO) {
             try {
-                val request = YoutubeDLRequest(url).apply {
-                    addOption("--no-warnings")
-                    if (flatPlaylist) addOption("--flat-playlist")
+                fun read(publicFallback: Boolean): VideoSummary {
+                    val request = YoutubeDLRequest(url).apply {
+                        applyYoutubeAutomation(context, publicFallback)
+                        addOption("--no-warnings")
+                        if (flatPlaylist) addOption("--flat-playlist")
+                    }
+                    val info = YoutubeDL.getInstance().getInfo(request)
+                    return VideoSummary(
+                        title = info.title.orEmpty(),
+                        uploader = info.uploader.orEmpty(),
+                        thumbnail = info.thumbnail,
+                        durationSeconds = info.duration.toLong()
+                    )
                 }
-                val info = YoutubeDL.getInstance().getInfo(request)
-                VideoSummary(
-                    title = info.title.orEmpty(),
-                    uploader = info.uploader.orEmpty(),
-                    thumbnail = info.thumbnail,
-                    durationSeconds = info.duration.toLong()
-                )
+                runCatching { read(publicFallback = false) }.getOrElse { first ->
+                    if (!YoutubeAutomation.isBotChallenge(first.message.orEmpty())) throw first
+                    read(publicFallback = true)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "No se pudo leer la información de $url: ${e.message}")
                 null
@@ -117,18 +124,28 @@ object YtDlpEngine {
      * lo que incluso una colección grande cuesta una sola ejecución ligera de yt-dlp.
      * Cada elemento se convertirá después en un trabajo independiente de la cola.
      */
-    suspend fun analyzePlaylist(url: String): PlaylistAnalysis? = withContext(Dispatchers.IO) {
+    suspend fun analyzePlaylist(
+        context: Context,
+        url: String
+    ): PlaylistAnalysis? = withContext(Dispatchers.IO) {
         try {
-            val request = YoutubeDLRequest(url).apply {
-                addOption("--flat-playlist")
-                addOption("--dump-single-json")
-                addOption("--skip-download")
-                addOption("--no-warnings")
+            fun analyze(publicFallback: Boolean): YoutubeDLResponse {
+                val request = YoutubeDLRequest(url).apply {
+                    applyYoutubeAutomation(context, publicFallback)
+                    addOption("--flat-playlist")
+                    addOption("--dump-single-json")
+                    addOption("--skip-download")
+                    addOption("--no-warnings")
+                }
+                return YoutubeDL.getInstance().execute(
+                    request,
+                    "vortex-analyze-${System.nanoTime()}"
+                )
             }
-            val response = YoutubeDL.getInstance().execute(
-                request,
-                "vortex-analyze-${System.nanoTime()}"
-            )
+            val response = runCatching { analyze(publicFallback = false) }.getOrElse { first ->
+                if (!YoutubeAutomation.isBotChallenge(first.message.orEmpty())) throw first
+                analyze(publicFallback = true)
+            }
             val root = JSONObject(response.out.trim())
             val rawEntries = root.optJSONArray("entries")
             val entries = buildList {
@@ -192,6 +209,7 @@ object YtDlpEngine {
      * restantes estimados y la línea cruda de yt-dlp.
      */
     suspend fun download(
+        context: Context,
         request: DownloadRequest,
         destination: File,
         processId: String,
@@ -209,7 +227,9 @@ object YtDlpEngine {
         rateLimitKbps: Int = 0,
         onProgress: (Float, Long, String) -> Unit
     ): YoutubeDLResponse = withContext(Dispatchers.IO) {
-        val ytdlp = YoutubeDLRequest(sourceOverride ?: request.url).apply {
+        fun buildRequest(publicFallback: Boolean) =
+            YoutubeDLRequest(sourceOverride ?: request.url).apply {
+            applyYoutubeAutomation(context, publicFallback)
             if (targetDurationMs > 0) {
                 // ±15 s: suficiente para tolerar intros y silencios finales, y estrecho
                 // para descartar directos, popurrís y bucles de una hora.
@@ -229,7 +249,6 @@ object YtDlpEngine {
                 addOption("--max-downloads", "1")
             }
             addOption("--no-mtime")
-            addOption("--no-warnings")
             // El workspace sobrevive a cierres y reintentos. yt-dlp continúa el `.part`
             // en vez de volver a transferir desde cero.
             addOption("--continue")
@@ -289,8 +308,50 @@ object YtDlpEngine {
             }
         }
 
-        YoutubeDL.getInstance().execute(ytdlp, processId) { progress, eta, line ->
-            onProgress(progress, eta, line)
+        var botChallenge = false
+        val first = runCatching {
+            YoutubeDL.getInstance().execute(buildRequest(publicFallback = false), processId) {
+                    progress, eta, line ->
+                if (YoutubeAutomation.isBotChallenge(line)) {
+                    botChallenge = true
+                    onProgress(progress, eta, YoutubeAutomation.RECOVERY_STATUS)
+                } else {
+                    onProgress(progress, eta, line)
+                }
+            }
+        }
+        if (!botChallenge) return@withContext first.getOrThrow()
+
+        val producedMedia = destination.walkTopDown()
+            .any { it.isFile && it.length() > 0 && DownloadPublisher.isMedia(it) }
+        if (producedMedia) return@withContext first.getOrThrow()
+
+        onProgress(0f, -1L, YoutubeAutomation.RECOVERY_STATUS)
+        YoutubeDL.getInstance().execute(buildRequest(publicFallback = true), processId) {
+                progress, eta, line ->
+            onProgress(
+                progress,
+                eta,
+                if (YoutubeAutomation.isBotChallenge(line)) {
+                    YoutubeAutomation.RECOVERY_FAILED
+                } else {
+                    line
+                }
+            )
+        }
+    }
+
+    private fun YoutubeDLRequest.applyYoutubeAutomation(
+        context: Context,
+        publicFallback: Boolean
+    ) {
+        if (YoutubeAutomation.supportsEjs(versionOrUnknown(context))) {
+            YoutubeAutomation.quickJsExecutable(context.applicationInfo.nativeLibraryDir)
+                ?.let { path -> addOption("--js-runtimes", "quickjs:$path") }
+            addOption("--remote-components", YoutubeAutomation.EJS_COMPONENT)
+        }
+        if (publicFallback) {
+            addOption("--extractor-args", YoutubeAutomation.PUBLIC_CLIENT_ARGUMENT)
         }
     }
 

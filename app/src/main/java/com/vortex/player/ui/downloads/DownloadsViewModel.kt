@@ -312,7 +312,7 @@ class DownloadsViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 "Buscando en YouTube…"
             }
-            val analysis = YtDlpEngine.analyzePlaylist(target)
+            val analysis = YtDlpEngine.analyzePlaylist(getApplication(), target)
             if (analysis == null || !analysis.isPlaylist || analysis.entries.size <= 1) {
                 _resolving.value = false
                 _message.value = if (analysis == null) {

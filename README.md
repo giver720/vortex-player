@@ -44,6 +44,11 @@ YouTube y otras fuentes, esperar Wi-Fi/cargador/horario y limitar el ancho de ba
 fallos temporales se reintentan con espera progresiva conservando el archivo `.part`, y los
 trabajos pendientes se pueden mover al inicio o al final de la cola.
 
+YouTube usa automáticamente el QuickJS incluido en el APK y los componentes EJS de
+`yt-dlp`. Si aparece la comprobación anti-bot, Vórtex prueba una ruta pública alternativa
+sin pedir cuentas ni importar cookies. Los fallos de formato, JavaScript, FFmpeg y
+postprocesado permanecen visibles en la cola en vez de convertirse en un error genérico.
+
 **Enlaces de Spotify.** Pega una canción, un álbum o una lista y Vórtex lee **sólo los
 metadatos** del catálogo —título, artista, duración y portada—, busca cada tema en
 YouTube filtrando por duración y etiqueta el resultado con esos datos. El audio de
@@ -53,6 +58,8 @@ motor de catálogo se actualiza por separado mediante un manifiesto declarativo 
 puede adaptarse a cambios de estructura de Spotify sin descargar ni ejecutar código.
 Además, el lector reconoce estados hidratados alternativos y entidades serializadas para
 resistir despliegues A/B que muevan los datos sin previo aviso.
+Los enlaces abreviados de `open.spotify.com/s/` se mantienen dentro del flujo de Spotify:
+nunca se entregan al descargador como si fueran audio ni provocan reintentos DRM.
 
 **Tu Spotify (beta).** La conexión oficial usa OAuth 2.0 con PKCE: Vórtex nunca incluye
 ni solicita un `client secret`. El Hub sincroniza las playlists autorizadas de la cuenta,

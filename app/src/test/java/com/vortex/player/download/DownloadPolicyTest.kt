@@ -31,6 +31,12 @@ class DownloadPolicyTest {
     fun permanentErrorsAreNotRetriedAndFormatErrorsUseFallback() {
         assertFalse(DownloadRetryPolicy.isRetryable("ERROR: Private video"))
         assertFalse(DownloadRetryPolicy.isRetryable("Libera espacio y reintenta"))
+        assertFalse(
+            DownloadRetryPolicy.isRetryable(
+                "ERROR: [DRM] The requested site is known to use DRM protection"
+            )
+        )
+        assertFalse(DownloadRetryPolicy.isRetryable(YoutubeAutomation.RECOVERY_FAILED))
         assertTrue(DownloadRetryPolicy.isRetryable("HTTP Error 503"))
         assertTrue(
             DownloadRetryPolicy.isFormatFailure("Requested format is not available")
@@ -51,6 +57,21 @@ class DownloadPolicyTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun diagnosticsKeepUsefulWarningsAndDiscardProgressNoise() {
+        assertEquals(
+            "WARNING: No supported JavaScript runtime could be found",
+            DownloadDiagnostics.relevantLine(
+                "WARNING: No supported JavaScript runtime could be found"
+            )
+        )
+        assertEquals(
+            "ERROR: Postprocessing failed",
+            DownloadDiagnostics.relevantLine("ERROR: Postprocessing failed")
+        )
+        assertEquals(null, DownloadDiagnostics.relevantLine("[download] 51.2% of 10 MiB"))
     }
 
     @Test

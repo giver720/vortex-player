@@ -62,6 +62,7 @@ class SpotifyEngineTest {
         )
         assertTrue(SpotifyResolver.isSpotifyLink("https://spotify.link/AbCdEf123"))
         assertTrue(SpotifyResolver.isSpotifyLink("https://spoti.fi/AbCdEf123"))
+        assertTrue(SpotifyResolver.isSpotifyLink("https://open.spotify.com/s/W8rwo2V"))
     }
 
     @Test

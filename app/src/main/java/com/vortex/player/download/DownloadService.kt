@@ -265,7 +265,11 @@ class DownloadService : Service() {
                     job.id, DownloadStatus.FETCHING, 0f, -1, "Consultando fuente…"
                 )
                 notify(job.id, job.url, "Consultando fuente…", 0f)
-                val summary = YtDlpEngine.fetchInfo(job.url, flatPlaylist = job.playlist)
+                val summary = YtDlpEngine.fetchInfo(
+                    this,
+                    job.url,
+                    flatPlaylist = job.playlist
+                )
                 // La consulta ligera no expone processId en la librería. Si se canceló
                 // mientras respondía, no debe arrancar después la descarga pesada.
                 throwIfCancelled(job.id)
@@ -299,23 +303,25 @@ class DownloadService : Service() {
             // decide si hubo éxito es si quedó un fichero, no el código de salida.
             runCatching {
                 YtDlpEngine.download(
-                request = request,
-                destination = workspace,
-                processId = processId,
-                sourceOverride = job.searchQuery,
-                targetDurationMs = job.targetDurationMs,
-                outputName = job.outputName ?: spotify?.let {
-                    SpotifyJobs.outputNameFrom(it.first, job.playlistFolder)
-                },
-                rateLimitKbps = rateLimitKbps
-            ) { progress, eta, line ->
+                    context = this,
+                    request = request,
+                    destination = workspace,
+                    processId = processId,
+                    sourceOverride = job.searchQuery,
+                    targetDurationMs = job.targetDurationMs,
+                    outputName = job.outputName ?: spotify?.let {
+                        SpotifyJobs.outputNameFrom(it.first, job.playlistFolder)
+                    },
+                    rateLimitKbps = rateLimitKbps
+                ) { progress, eta, line ->
                 val clamped = (progress / 100f).coerceIn(0f, 1f)
                 val now = System.currentTimeMillis()
 
                 val trimmed = line.trim()
-                if (trimmed.startsWith("ERROR", ignoreCase = true) && trimmed !in engineErrors) {
+                val diagnostic = DownloadDiagnostics.relevantLine(trimmed)
+                if (diagnostic != null && diagnostic !in engineErrors) {
                     // Un puñado basta: en una lista larga el mismo fallo se repite por pista.
-                    if (engineErrors.size < 5) engineErrors += trimmed
+                    if (engineErrors.size < 5) engineErrors += diagnostic
                 }
 
                 var positionChanged = false
