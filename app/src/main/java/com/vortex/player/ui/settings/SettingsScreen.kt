@@ -126,9 +126,7 @@ fun SettingsScreen(
             ) {
                 item {
                     Notice(
-                        "VLC es el motor único y no expone una sesión de audio Android " +
-                            "a la que aplicar estos efectos. Ecualizador, refuerzo de " +
-                            "graves y virtualizador permanecen desactivados."
+                        "El motor activo no ofrece procesado de audio compatible."
                     )
                 }
                 return@LazyColumn
@@ -204,10 +202,10 @@ fun SettingsScreen(
                     EffectSlider(
                         title = "VOLUMEN EXTRA",
                         hint = if (caps.advanced && settings.limiterOn) {
-                            "Sube por encima del máximo del sistema. El limitador recorta " +
-                                "los picos por ti, así que gana potencia sin distorsionar."
+                            "Sube por encima del máximo del sistema. La protección reserva " +
+                                "margen para la curva y evita que los picos recorten."
                         } else if (caps.advanced) {
-                            "Sube por encima del máximo del sistema. Con el limitador " +
+                            "Sube por encima del máximo del sistema. Con la protección " +
                                 "apagado no hay red: pasarse de aquí recorta y distorsiona."
                         } else {
                             "Sube por encima del máximo del sistema. Sin limitador, pasarse " +
@@ -589,15 +587,10 @@ private fun OutputProfileSelector(
 }
 
 /**
- * Limitador, ahora opcional.
+ * Protección de picos, ahora opcional.
  *
- * Antes se informaba de él sin poder apagarlo. Tiene sentido poder: aplasta los picos, y
- * con material bien grabado y el volumen en su sitio eso se lleva por delante el ataque de
- * platillos y percusiones. Quien quiera los transitorios intactos debe poder tenerlos.
- *
- * Va puesto por defecto y el aviso de apagarlo es deliberadamente concreto: sin limitador,
- * el volumen extra y las curvas cargadas de graves recortan en el conversor, y eso suena a
- * chasquido, no a "más fuerte".
+ * libVLC no expone un limitador dinámico. La protección reserva margen igual al realce más
+ * alto de la curva: evita clipping sin comprimir ni aplastar los transitorios.
  */
 @Composable
 private fun LimiterToggle(
@@ -628,7 +621,7 @@ private fun LimiterToggle(
                 modifier = Modifier.size(16.dp)
             )
             Text(
-                text = "LIMITADOR",
+                text = "PROTECCIÓN DE PICOS",
                 style = MaterialTheme.typography.labelLarge,
                 color = if (enabled) VortexPalette.TextHigh else VortexPalette.TextLow,
                 modifier = Modifier.weight(1f)
@@ -647,10 +640,10 @@ private fun LimiterToggle(
         }
         Text(
             text = if (on) {
-                "Impide que los picos recorten al amplificar. Apágalo si prefieres los " +
-                    "transitorios intactos y no vas a forzar el volumen."
+                "Reserva margen para el realce más alto de la curva. Evita clipping sin " +
+                    "comprimir ni aplastar los transitorios."
             } else {
-                "Apagado. Los golpes conservan toda su pegada, pero el volumen extra y las " +
+                "Apagada. La ganancia se aplica completa, pero el volumen extra y las " +
                     "curvas cargadas de graves pueden recortar y sonar a chasquido."
             },
             style = MaterialTheme.typography.bodySmall,

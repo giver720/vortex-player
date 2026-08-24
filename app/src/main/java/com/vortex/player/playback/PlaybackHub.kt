@@ -76,8 +76,8 @@ object PlaybackHub {
 
     /**
      * Lo que el DSP del dispositivo permite en la sesión actual. Es `null` mientras no
-     * haya reproducción, y queda vacío cuando el motor activo es VLC, que no expone
-     * sesión de audio a la que enganchar efectos.
+     * haya reproducción. VLC informa aquí de sus efectos nativos, que no necesitan una
+     * sesión de audio Android.
      */
     private val _audioCapabilities = MutableStateFlow<AudioCapabilities?>(null)
     val audioCapabilities: StateFlow<AudioCapabilities?> = _audioCapabilities.asStateFlow()

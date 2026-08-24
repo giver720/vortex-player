@@ -115,14 +115,7 @@ data class AudioSettings(
     val compressor: Float = 0f,
     val compressorOn: Boolean = false,
 
-    /**
-     * Limitador. Se puede apagar, pero por defecto va puesto.
-     *
-     * Es lo que recorta los picos cuando el ecualizador o el volumen extra levantan la
-     * señal por encima de cero. Apagarlo devuelve los transitorios intactos —los platillos
-     * y las percusiones dejan de sonar apelmazados— a cambio de que, si se va de rango,
-     * recorte el propio conversor y eso sí distorsiona de verdad.
-     */
+    /** Protección de picos: reserva margen para la curva sin comprimir los transitorios. */
     val limiterOn: Boolean = true
 ) {
     val effectiveBands: List<Float>

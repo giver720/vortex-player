@@ -95,6 +95,16 @@
             </intent-filter>
         </service>
 
+        <!-- Permite reanudar la última sesión desde auriculares o Bluetooth aun si el
+             proceso fue destruido. PlaybackService implementa onPlaybackResumption. -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- Ventana flotante tipo popup por encima de cualquier app -->
         <service
             android:name=".popup.PopupService"

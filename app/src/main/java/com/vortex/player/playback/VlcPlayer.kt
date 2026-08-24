@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.media3.common.C
@@ -17,6 +18,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.vortex.player.audio.AudioSettings
+import com.vortex.player.audio.VlcEqualizerPlanner
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -79,6 +82,9 @@ class VlcPlayer(
 
     private var videoLayout: VLCVideoLayout? = null
     private var videoEnabled: Boolean = true
+
+    /** Último ajuste aplicado; se reaplica al abrir cada medio por consistencia entre pistas. */
+    private var audioSettings = AudioSettings()
 
     override val engineName: String = "VLC"
 
@@ -292,6 +298,27 @@ class VlcPlayer(
         return Futures.immediateVoidFuture()
     }
 
+    /** Aplica la cadena de tono dentro de libVLC, sin depender de una sesión de audio Android. */
+    fun applyAudioSettings(settings: AudioSettings) {
+        audioSettings = settings
+        runCatching {
+            if (!settings.enabled) {
+                mediaPlayer.setEqualizer(null)
+                return
+            }
+            val frequencies = List(MediaPlayer.Equalizer.getBandCount()) { index ->
+                MediaPlayer.Equalizer.getBandFrequency(index)
+            }
+            val plan = VlcEqualizerPlanner.build(settings, frequencies)
+            val equalizer = MediaPlayer.Equalizer.create()
+            check(equalizer.setPreAmp(plan.preampDb)) { "VLC rechazó el preamplificador" }
+            plan.bandGainsDb.forEachIndexed { index, gain ->
+                check(equalizer.setAmp(index, gain)) { "VLC rechazó la banda $index" }
+            }
+            check(mediaPlayer.setEqualizer(equalizer)) { "VLC rechazó el ecualizador" }
+        }.onFailure { Log.w(TAG, "No se pudo aplicar el ecualizador nativo", it) }
+    }
+
     override fun handleSetPlaybackParameters(
         playbackParameters: PlaybackParameters
     ): ListenableFuture<*> {
@@ -397,6 +424,7 @@ class VlcPlayer(
         vlcPlaybackState = Player.STATE_BUFFERING
 
         mediaPlayer.rate = speed
+        applyAudioSettings(audioSettings)
         mediaPlayer.setVideoTrackEnabled(videoEnabled)
         if (play) mediaPlayer.play()
         invalidateState()
@@ -486,6 +514,8 @@ class VlcPlayer(
     }
 
     private companion object {
+        const val TAG = "VlcPlayer"
+
         val AVAILABLE_COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(
                 Player.COMMAND_PLAY_PAUSE,

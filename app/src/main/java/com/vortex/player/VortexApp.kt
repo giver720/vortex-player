@@ -10,12 +10,39 @@ import coil.ImageLoaderFactory
 import coil.decode.VideoFrameDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.playback.PlaybackSessionStore
+import com.vortex.player.playback.toMediaEntry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class VortexApp : Application(), ImageLoaderFactory {
+
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        restorePlaybackSession()
+    }
+
+    /** Hace que el dock reaparezca aunque Android haya terminado el proceso anterior. */
+    private fun restorePlaybackSession() {
+        applicationScope.launch {
+            PlaybackSessionStore(this@VortexApp).load()?.let { snapshot ->
+                val value = snapshot.normalized()
+                PlaybackHub.setQueue(
+                    value.entries.map { it.toMediaEntry() },
+                    value.currentIndex,
+                    value.positionMs
+                )
+                PlaybackHub.setAudioOnly(value.audioOnly)
+                PlaybackHub.setRepeat(value.repeat)
+                PlaybackHub.setShuffle(value.shuffle)
+            }
+        }
     }
 
     /**

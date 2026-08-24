@@ -16,6 +16,11 @@ y vídeo. El contenedor `SimpleBasePlayer` mantiene la integración con `MediaSe
 lo que notificación, pantalla de bloqueo, mandos Bluetooth, ventana flotante y controles
 de Android continúan funcionando sin introducir un segundo motor multimedia.
 
+**Sonido procesado dentro de VLC.** Ecualizador de diez bandas, presets, graves,
+claridad y volumen extra ya no dependen de una sesión de efectos Android. Los perfiles
+por altavoz, cable y Bluetooth se aplican directamente al ecualizador nativo de libVLC,
+con margen automático para evitar clipping cuando está activa la protección de picos.
+
 **Un MP4 suena como un MP3.** El modo solo-audio apaga la decodificación de vídeo sin
 tocar el audio ni la posición: VLC desactiva la pista con `setVideoTrackEnabled(false)`.
 Se puede activar desde la biblioteca, desde el reproductor **y desde la propia ventana
@@ -78,7 +83,9 @@ atrás sin depender de que alguien recuerde volver aquí.
 - Búsqueda unificada por nombre de fichero, carpeta y ruta, con resultados agrupados.
 - Orden por fecha, nombre, duración, tamaño o resolución, y vista rejilla o lista.
 - Selección múltiple con acciones en bloque, listas de reproducción propias y favoritos.
-- "Continuar viendo" con la posición guardada cada 4 segundos, resistente a cierres bruscos.
+- "Continuar viendo" conserva cada 4 segundos la cola completa, la pista, posición, modo
+  solo-audio, velocidad, repetición y aleatorio en un archivo atómico. El dock y los botones
+  Bluetooth pueden restaurarla incluso después de que Android destruya el proceso.
 - Gestos: brillo a la izquierda, volumen a la derecha, arrastre horizontal para buscar,
   doble toque lateral para ±10 s, bloqueo de controles.
 - Selección de pistas de audio y subtítulos, velocidad de 0,5× a 3× con corrección de tono.

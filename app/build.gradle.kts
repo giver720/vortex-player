@@ -22,8 +22,9 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.21.0"
+        versionCode = 29
+        versionName = "0.22.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // El Client ID identifica la app y es público. El Client Secret nunca entra al APK:
         // Android autentica con Authorization Code + PKCE.
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"511ae080967c4da7b98933258ba1b27b\"")
@@ -146,4 +147,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // La implementación de org.json de Android no ejecuta en la JVM local.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
 }

@@ -17,18 +17,26 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.vortex.player.MainActivity
 import com.vortex.player.audio.AudioCapabilities
+import com.vortex.player.audio.AudioOutput
+import com.vortex.player.audio.AudioPreferences
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -47,6 +55,7 @@ class PlaybackService : MediaSessionService() {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repository: MediaRepository
+    private lateinit var sessionStore: PlaybackSessionStore
 
     private val audioManager: AudioManager by lazy {
         getSystemService(AUDIO_SERVICE) as AudioManager
@@ -111,9 +120,12 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         repository = MediaRepository.get(this)
+        sessionStore = PlaybackSessionStore(this)
         vlcPlayer = VlcPlayer(this).apply { addListener(playerListener) }
+        sessionStore.load()?.let(::restoreSnapshotState)
         mediaSession = MediaSession.Builder(this, vlcPlayer)
             .setSessionActivity(sessionActivityIntent())
+            .setCallback(sessionCallback)
             .build()
             // Sin este registro explícito, Media3 nunca publica la notificación multimedia
             // y el servicio jamás pasa a primer plano: `onGetSession` sólo se invoca cuando
@@ -122,8 +134,7 @@ class PlaybackService : MediaSessionService() {
             // reproducción con «Stopping service due to app idle» a los dos minutos.
             .also { addSession(it) }
         PlaybackHub.setPlayer(vlcPlayer, vlcPlayer)
-        // libVLC no publica un id de sesión Android al que enganchar los efectos de audio.
-        PlaybackHub.setAudioCapabilities(AudioCapabilities())
+        PlaybackHub.setAudioCapabilities(VLC_AUDIO_CAPABILITIES)
         ContextCompat.registerReceiver(
             this,
             noisyReceiver,
@@ -133,6 +144,22 @@ class PlaybackService : MediaSessionService() {
         instance = this
         startPositionPersistence()
         startOrderPreferences()
+        startAudioPreferences()
+    }
+
+    /** Cambia automáticamente al perfil global o al de la salida activa. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun startAudioPreferences() {
+        scope.launch {
+            combine(
+                AudioPreferences.observePerOutput(this@PlaybackService),
+                AudioOutput.observe(this@PlaybackService)
+            ) { perOutput, output -> if (perOutput) output else null }
+                .flatMapLatest { output ->
+                    AudioPreferences.observe(this@PlaybackService, output)
+                }
+                .collect(vlcPlayer::applyAudioSettings)
+        }
     }
 
     /**
@@ -183,6 +210,27 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
+    /** Reanudación solicitada por auriculares, Bluetooth o controles del sistema. */
+    private val sessionCallback = object : MediaSession.Callback {
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val snapshot = sessionStore.load()?.normalized() ?: return Futures.immediateFailedFuture(
+                IllegalStateException("No hay una sesión de Vórtex para reanudar")
+            )
+            restoreSnapshotState(snapshot)
+            val entries = snapshot.entries.map { it.toMediaEntry() }
+            return Futures.immediateFuture(
+                MediaSession.MediaItemsWithStartPosition(
+                    entries.map { it.toMediaItem() },
+                    snapshot.currentIndex,
+                    snapshot.positionMs
+                )
+            )
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_PLAY) {
             pendingRequest?.let { request ->
@@ -208,6 +256,22 @@ class PlaybackService : MediaSessionService() {
         vlcPlayer.setVideoEnabled(!audioOnly)
         vlcPlayer.prepare()
         vlcPlayer.playWhenReady = true
+        persistSessionAsync()
+    }
+
+    /** Repone estado no destructivo; Media3 cargará los elementos cuando vaya a reproducir. */
+    private fun restoreSnapshotState(raw: PlaybackSessionSnapshot) {
+        val snapshot = raw.normalized()
+        val entries = snapshot.entries.map { it.toMediaEntry() }
+        PlaybackHub.setQueue(entries, snapshot.currentIndex, snapshot.positionMs)
+        audioOnly = snapshot.audioOnly
+        PlaybackHub.setAudioOnly(audioOnly)
+        order = PlaybackPrefs(snapshot.repeat, snapshot.shuffle)
+        PlaybackHub.setRepeat(snapshot.repeat)
+        PlaybackHub.setShuffle(snapshot.shuffle)
+        vlcPlayer.setVideoEnabled(!audioOnly)
+        vlcPlayer.playbackParameters = PlaybackParameters(snapshot.speed)
+        applyOrder()
     }
 
     // ---------------------------------------------------------- eventos VLC
@@ -215,6 +279,7 @@ class PlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             PlaybackHub.setCurrentIndex(vlcPlayer.currentMediaItemIndex)
+            persistSessionAsync()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -222,6 +287,7 @@ class PlaybackService : MediaSessionService() {
                 if (!requestAudioFocus()) vlcPlayer.pause()
             } else if (!resumeOnFocusGain) {
                 abandonAudioFocus()
+                persistSessionAsync()
             }
         }
 
@@ -311,8 +377,37 @@ class PlaybackService : MediaSessionService() {
                         player.duration
                     )
                 }
+                persistSessionAsync()
             }
         }
+    }
+
+    private fun snapshotNow(): PlaybackSessionSnapshot? {
+        val entries = PlaybackHub.queue.value
+        if (entries.isEmpty()) return null
+        return PlaybackSessionSnapshot(
+            entries = entries.map { it.toPersisted() },
+            currentIndex = vlcPlayer.currentMediaItemIndex
+                .takeIf { it in entries.indices }
+                ?: PlaybackHub.currentIndex.value,
+            // Un seek hacia atrás también debe persistirse. Sólo se usa el reloj del Hub
+            // cuando VLC aún no tiene items, que es el estado frío recién restaurado.
+            positionMs = if (vlcPlayer.mediaItemCount > 0) {
+                vlcPlayer.currentPosition.coerceAtLeast(0L)
+            } else {
+                PlaybackHub.positionMs.value
+            },
+            audioOnly = audioOnly,
+            speed = vlcPlayer.playbackParameters.speed,
+            repeat = order.repeat,
+            shuffle = order.shuffle,
+            updatedAtMs = System.currentTimeMillis()
+        ).normalized()
+    }
+
+    private fun persistSessionAsync() {
+        val snapshot = snapshotNow() ?: return
+        scope.launch(Dispatchers.IO) { runCatching { sessionStore.save(snapshot) } }
     }
 
     private fun persistNow() {
@@ -321,10 +416,11 @@ class PlaybackService : MediaSessionService() {
         // instante en que se puede leer antes de soltar el motor, y de él depende que
         // reanudar continúe donde estaba en vez de empezar de cero.
         PlaybackHub.setPosition(player.currentPosition)
-        val entry = PlaybackHub.currentEntry.value ?: return
-        if (player.duration > 0) {
+        val entry = PlaybackHub.currentEntry.value
+        if (entry != null && player.duration > 0) {
             repository.savePosition(entry.uri.toString(), player.currentPosition, player.duration)
         }
+        snapshotNow()?.let { runCatching { sessionStore.save(it) } }
     }
 
     // ----------------------------------------------------------- ciclo vida
@@ -366,6 +462,16 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         private const val ACTION_PLAY = "com.vortex.player.action.PLAY"
+
+        private val VLC_AUDIO_CAPABILITIES = AudioCapabilities(
+            advanced = true,
+            hasEqualizer = true,
+            hasBassBoost = true,
+            hasVirtualizer = false,
+            hasBoost = true,
+            hasCompressor = false,
+            systemWide = false
+        )
 
         /**
          * La cola se pasa por un campo estático en vez de por el Intent: son listas de
@@ -415,6 +521,23 @@ class PlaybackService : MediaSessionService() {
          */
         fun resume(context: Context) {
             PlaybackHub.player.value?.let { player ->
+                // El servicio puede existir con la sesión restaurada en memoria pero VLC
+                // todavía vacío. En ese caso hay que cargar la cola antes de dar play.
+                if (player.mediaItemCount == 0) {
+                    val service = instance
+                    val queue = PlaybackHub.queue.value
+                    if (service != null && queue.isNotEmpty()) {
+                        service.startRequest(
+                            PlayRequest(
+                                entries = queue,
+                                startIndex = PlaybackHub.currentIndex.value,
+                                positionMs = PlaybackHub.positionMs.value,
+                                audioOnly = PlaybackHub.audioOnly.value
+                            )
+                        )
+                    }
+                    return
+                }
                 // `play()` sobre un motor parado no hace nada: si un error lo dejó en
                 // reposo, hay que rearmarlo, y si la cola llegó al final hay que volver al
                 // principio. En ambos casos el botón se quedaba igual de mudo.
