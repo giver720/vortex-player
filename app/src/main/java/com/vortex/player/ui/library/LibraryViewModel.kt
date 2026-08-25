@@ -6,11 +6,18 @@ import android.content.IntentSender
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vortex.player.data.LibraryPreferences
+import com.vortex.player.data.LibraryFilter
+import com.vortex.player.data.LibraryIntelligence
+import com.vortex.player.data.LibraryIntelligenceEngine
 import com.vortex.player.data.LibraryPrefs
 import com.vortex.player.data.LibraryState
 import com.vortex.player.data.MediaDeleter
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaRepository
+import com.vortex.player.data.ContainerFilter
+import com.vortex.player.data.DurationFilter
+import com.vortex.player.data.ResolutionFilter
+import com.vortex.player.data.SizeFilter
 import com.vortex.player.data.PlaylistWithItems
 import com.vortex.player.data.SearchResults
 import com.vortex.player.data.SortField
@@ -30,7 +37,8 @@ enum class LibraryTab(val label: String) {
     VIDEO("VÍDEO"),
     AUDIO("AUDIO"),
     FOLDERS("CARPETAS"),
-    PLAYLISTS("LISTAS")
+    PLAYLISTS("LISTAS"),
+    SMART("SMART")
 }
 
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
@@ -87,6 +95,14 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Hay un reescaneo en curso; alimenta el indicador de tirar para refrescar. */
     val refreshing: StateFlow<Boolean> = repository.refreshing
+    val lastScan = repository.lastScan
+
+    private val _filter = MutableStateFlow(LibraryFilter())
+    val filter: StateFlow<LibraryFilter> = _filter.asStateFlow()
+
+    private var indexedEntries: List<MediaEntry>? = null
+    private var indexedFilter = LibraryFilter()
+    private var intelligenceCache = LibraryIntelligence()
 
     fun toggleAutoRefresh() {
         viewModelScope.launch {
@@ -167,6 +183,36 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { LibraryPreferences.setViewMode(getApplication(), next) }
     }
 
+    fun cycleResolutionFilter() {
+        val values = ResolutionFilter.entries
+        _filter.value = _filter.value.copy(
+            resolution = values[(_filter.value.resolution.ordinal + 1) % values.size]
+        )
+    }
+
+    fun cycleDurationFilter() {
+        val values = DurationFilter.entries
+        _filter.value = _filter.value.copy(
+            duration = values[(_filter.value.duration.ordinal + 1) % values.size]
+        )
+    }
+
+    fun cycleSizeFilter() {
+        val values = SizeFilter.entries
+        _filter.value = _filter.value.copy(
+            size = values[(_filter.value.size.ordinal + 1) % values.size]
+        )
+    }
+
+    fun cycleContainerFilter() {
+        val values = ContainerFilter.entries
+        _filter.value = _filter.value.copy(
+            container = values[(_filter.value.container.ordinal + 1) % values.size]
+        )
+    }
+
+    fun clearFilters() { _filter.value = LibraryFilter() }
+
     // ---------------------------------------------------------- selección
 
     fun toggleSelection(entry: MediaEntry) {
@@ -180,6 +226,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectAll(entries: List<MediaEntry>) {
         _selection.value = entries.map { it.uri.toString() }.toSet()
+    }
+
+    fun selectCopies(entries: List<MediaEntry>) {
+        _selection.value = entries.map { it.uri.toString() }.toSet()
+        _message.value = "${entries.size} posibles copias marcadas para revisar"
     }
 
     fun clearSelection() { _selection.value = emptySet() }
@@ -309,9 +360,23 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 ?.let { path -> state.folderTree.find(path)?.files.orEmpty() }
                 ?: emptyList()
             LibraryTab.PLAYLISTS -> playlistEntries(state)
+            LibraryTab.SMART -> emptyList()
         }
         // Una lista hecha a mano ya tiene un orden: el que le dio su dueño.
-        return if (playlistKeepsOrder()) base else base.sortedBy(prefs.value)
+        val filtered = LibraryIntelligenceEngine.filter(base, _filter.value)
+        return if (playlistKeepsOrder()) filtered else filtered.sortedBy(prefs.value)
+    }
+
+    fun intelligence(state: LibraryState): LibraryIntelligence {
+        val activeFilter = _filter.value
+        if (indexedEntries !== state.entries || indexedFilter != activeFilter) {
+            indexedEntries = state.entries
+            indexedFilter = activeFilter
+            intelligenceCache = LibraryIntelligenceEngine.analyze(
+                LibraryIntelligenceEngine.filter(state.entries, activeFilter)
+            )
+        }
+        return intelligenceCache
     }
 
     private fun playlistEntries(state: LibraryState): List<MediaEntry> {

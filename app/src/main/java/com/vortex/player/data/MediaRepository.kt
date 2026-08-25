@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 /** Instantánea completa de la biblioteca ya cruzada con el historial local. */
 data class LibraryState(
@@ -84,6 +85,7 @@ class MediaRepository(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val scanned = MutableStateFlow<List<MediaEntry>?>(null)
+    private val refreshMutex = Mutex()
 
     val library: StateFlow<LibraryState> =
         combine(scanned, dao.observeAll()) { entries, states ->
@@ -109,13 +111,20 @@ class MediaRepository(
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
+    private val _lastScan = MutableStateFlow(MediaScanReport())
+    val lastScan: StateFlow<MediaScanReport> = _lastScan
+
     fun refresh() {
         scope.launch {
+            if (!refreshMutex.tryLock()) return@launch
             _refreshing.value = true
             try {
-                scanned.value = scanner.scanAll()
+                val result = scanner.scanAll(scanned.value.orEmpty())
+                scanned.value = result.entries
+                _lastScan.value = result.report
             } finally {
                 _refreshing.value = false
+                refreshMutex.unlock()
             }
         }
     }

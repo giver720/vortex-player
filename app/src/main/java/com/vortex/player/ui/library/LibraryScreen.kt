@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -66,12 +67,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.vortex.player.data.LibraryState
+import com.vortex.player.data.LibraryFilter
+import com.vortex.player.data.LibraryIntelligence
 import com.vortex.player.data.MediaEntry
+import com.vortex.player.data.MediaScanReport
 import com.vortex.player.data.SortField
 import com.vortex.player.data.ViewMode
+import com.vortex.player.ui.common.formatSize
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
+import java.util.Locale
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -101,6 +107,8 @@ fun LibraryScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val deleteRequest by viewModel.deleteRequest.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
+    val lastScan by viewModel.lastScan.collectAsStateWithLifecycle()
 
     var showPlaylistDialog by remember { mutableStateOf(false) }
 
@@ -180,8 +188,9 @@ fun LibraryScreen(
 
             val showingTree = tab == LibraryTab.FOLDERS && openFolder == null
             val showingPlaylistIndex = tab == LibraryTab.PLAYLISTS && openPlaylist == null
+            val showingSmart = tab == LibraryTab.SMART
 
-            if (!showingTree && !showingPlaylistIndex) {
+            if (!showingTree && !showingPlaylistIndex && !showingSmart) {
                 SortAndViewBar(
                     sortField = prefs.sortField,
                     descending = prefs.descending,
@@ -190,6 +199,14 @@ fun LibraryScreen(
                     count = visible.size,
                     onSort = viewModel::setSort,
                     onToggleView = viewModel::toggleViewMode
+                )
+                SmartFilterBar(
+                    filter = filter,
+                    onResolution = viewModel::cycleResolutionFilter,
+                    onDuration = viewModel::cycleDurationFilter,
+                    onSize = viewModel::cycleSizeFilter,
+                    onContainer = viewModel::cycleContainerFilter,
+                    onClear = viewModel::clearFilters
                 )
             }
 
@@ -221,6 +238,17 @@ fun LibraryScreen(
                     contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding)
                 )
 
+                showingSmart -> SmartLibraryView(
+                    intelligence = viewModel.intelligence(library),
+                    scan = lastScan,
+                    contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding),
+                    onPlaySeries = { entry, queue ->
+                        viewModel.play(entry, queue)
+                        onOpenPlayer()
+                    },
+                    onSelectCopies = viewModel::selectCopies
+                )
+
                 else -> Column(Modifier.fillMaxSize()) {
                     if (tab == LibraryTab.FOLDERS && openFolder != null) {
                         FolderBreadcrumbs(
@@ -245,7 +273,7 @@ fun LibraryScreen(
                     }
 
                     if (visible.isEmpty()) {
-                        EmptyState()
+                        EmptyState(filtered = filter.isActive && library.entries.isNotEmpty())
                     } else {
                         MediaCollection(
                             entries = visible,
@@ -687,6 +715,204 @@ private fun SortAndViewBar(
 }
 
 @Composable
+private fun SmartFilterBar(
+    filter: LibraryFilter,
+    onResolution: () -> Unit,
+    onDuration: () -> Unit,
+    onSize: () -> Unit,
+    onContainer: () -> Unit,
+    onClear: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        SmartFilterChip(filter.resolution.label, filter.resolution.ordinal > 0, onResolution)
+        SmartFilterChip(filter.duration.label, filter.duration.ordinal > 0, onDuration)
+        SmartFilterChip(filter.size.label, filter.size.ordinal > 0, onSize)
+        SmartFilterChip(filter.container.label, filter.container.ordinal > 0, onContainer)
+        if (filter.isActive) SmartFilterChip("LIMPIAR", true, onClear)
+    }
+}
+
+@Composable
+private fun SmartFilterChip(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (active) VortexPalette.Graphite else VortexPalette.TextMid,
+        modifier = Modifier
+            .background(
+                if (active) VortexPalette.Neon else VortexPalette.GraphiteHigh,
+                VortexShapes.small
+            )
+            .border(0.5.dp, if (active) VortexPalette.Neon else VortexPalette.Outline, VortexShapes.small)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 7.dp)
+    )
+}
+
+@Composable
+private fun SmartLibraryView(
+    intelligence: LibraryIntelligence,
+    scan: MediaScanReport,
+    contentPadding: PaddingValues,
+    onPlaySeries: (MediaEntry, List<MediaEntry>) -> Unit,
+    onSelectCopies: (List<MediaEntry>) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Column(
+                Modifier
+                    .padding(horizontal = 14.dp)
+                    .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+                    .border(0.5.dp, VortexPalette.Outline, VortexShapes.medium)
+                    .padding(14.dp)
+            ) {
+                Text("BIBLIOTECA INTELIGENTE", style = MaterialTheme.typography.labelLarge, color = VortexPalette.Neon)
+                Text(
+                    text = "${intelligence.series.size} series · " +
+                        "${intelligence.duplicateGroups.size} grupos posibles · " +
+                        (formatSize(intelligence.potentialReclaimableBytes).ifBlank { "0 B" }),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VortexPalette.TextHigh,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+                Text(
+                    text = "Último escaneo: ${scan.total} medios · +${scan.added} · " +
+                        "−${scan.removed} · ${scan.updated} actualizados · ${scan.elapsedMs} ms",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VortexPalette.TextLow,
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+            }
+        }
+
+        if (intelligence.series.isNotEmpty()) {
+            item { SmartSectionTitle("SERIES · ${intelligence.series.size}") }
+            items(intelligence.series, key = { "series-${it.title}" }) { series ->
+                val queue = series.episodes.map { it.entry }
+                Column(
+                    Modifier
+                        .padding(horizontal = 14.dp)
+                        .background(VortexPalette.GraphiteHigh, VortexShapes.small)
+                        .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+                        .padding(12.dp)
+                ) {
+                    Text(series.title, style = MaterialTheme.typography.titleMedium, color = VortexPalette.TextHigh)
+                    Text(
+                        "${series.seasonCount} temporadas · ${series.episodes.size} episodios",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VortexPalette.Cyan,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 5.dp)
+                    )
+                    series.episodes.take(6).forEach { episode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPlaySeries(episode.entry, queue) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                String.format(Locale.ROOT, "S%02dE%02d", episode.season, episode.episode),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = VortexPalette.Neon,
+                                modifier = Modifier.width(72.dp)
+                            )
+                            Text(
+                                episode.entry.title.ifBlank { episode.entry.displayName },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = VortexPalette.TextMid,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    if (series.episodes.size > 6) {
+                        Text(
+                            "+ ${series.episodes.size - 6} episodios",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VortexPalette.TextLow
+                        )
+                    }
+                }
+            }
+        }
+
+        if (intelligence.duplicateGroups.isNotEmpty()) {
+            item { SmartSectionTitle("POSIBLES DUPLICADOS · ${intelligence.duplicateGroups.size}") }
+            items(intelligence.duplicateGroups, key = { "duplicate-${it.key}" }) { group ->
+                Column(
+                    Modifier
+                        .padding(horizontal = 14.dp)
+                        .background(VortexPalette.GraphiteHigh, VortexShapes.small)
+                        .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        "${group.entries.size} ARCHIVOS · ${formatSize(group.reclaimableBytes)} RECUPERABLES",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = VortexPalette.Amber
+                    )
+                    group.entries.take(3).forEach { entry ->
+                        Text(
+                            "• ${entry.displayName} · ${entry.folderName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VortexPalette.TextMid,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    Text(
+                        "MARCAR COPIAS PARA REVISAR",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = VortexPalette.Cyan,
+                        modifier = Modifier
+                            .padding(top = 9.dp)
+                            .clickable { onSelectCopies(group.copiesToReview) }
+                            .padding(vertical = 5.dp)
+                    )
+                }
+            }
+        }
+
+        if (intelligence.series.isEmpty() && intelligence.duplicateGroups.isEmpty()) {
+            item {
+                Text(
+                    "Todavía no se detectaron series ni posibles duplicados.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VortexPalette.TextLow,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartSectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = VortexPalette.TextLow,
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
 private fun SectionTitle(text: String) {
     Text(
         text = text,
@@ -741,16 +967,20 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun EmptyState() {
+private fun EmptyState(filtered: Boolean = false) {
     Box(Modifier.fillMaxSize().padding(30.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "AQUÍ NO HAY NADA",
+                text = if (filtered) "NINGÚN MEDIO COINCIDE" else "AQUÍ NO HAY NADA",
                 style = MaterialTheme.typography.labelLarge,
                 color = VortexPalette.TextMid
             )
             Text(
-                text = "Cuando descargues o grabes algo, aparecerá aquí.",
+                text = if (filtered) {
+                    "Cambia o limpia los filtros de la biblioteca."
+                } else {
+                    "Cuando descargues o grabes algo, aparecerá aquí."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = VortexPalette.TextLow,
                 modifier = Modifier.padding(top = 8.dp)

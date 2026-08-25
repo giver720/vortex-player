@@ -20,6 +20,7 @@ data class MediaEntry(
     val folderPath: String,
     val folderName: String,
     val dateAddedSec: Long,
+    val dateModifiedSec: Long = dateAddedSec,
     val isVideo: Boolean,
     val artist: String? = null,
     val album: String? = null

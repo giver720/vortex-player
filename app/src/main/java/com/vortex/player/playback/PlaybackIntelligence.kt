@@ -46,6 +46,37 @@ object PlaybackRecoveryPolicy {
     }
 }
 
+data class VideoLivenessSample(
+    val playbackActive: Boolean,
+    val videoEnabled: Boolean,
+    val outputAttached: Boolean,
+    val hasVideoTrack: Boolean,
+    val statsAvailable: Boolean,
+    val decoder: DecoderMode,
+    val elapsedWithoutDisplayedFrameMs: Long,
+    val timelineAdvanceMs: Long
+)
+
+/**
+ * Detecta el caso que el watchdog de tiempo no puede ver: el audio avanza pero VLC no entrega
+ * ningún cuadro a la salida de vídeo. Sólo degrada hardware; software conserva el audio y deja
+ * disponible el reintento manual en vez de entrar en un bucle.
+ */
+object VideoLivenessPolicy {
+    const val FRAME_TIMEOUT_MS = 8_000L
+    const val MIN_TIMELINE_ADVANCE_MS = 3_000L
+
+    fun shouldFallbackToSoftware(sample: VideoLivenessSample): Boolean =
+        sample.playbackActive &&
+            sample.videoEnabled &&
+            sample.outputAttached &&
+            sample.hasVideoTrack &&
+            sample.statsAvailable &&
+            sample.decoder == DecoderMode.HARDWARE &&
+            sample.elapsedWithoutDisplayedFrameMs >= FRAME_TIMEOUT_MS &&
+            sample.timelineAdvanceMs >= MIN_TIMELINE_ADVANCE_MS
+}
+
 data class PlaybackDiagnostics(
     val source: PlaybackSourceKind = PlaybackSourceKind.LOCAL,
     val decoder: DecoderMode = DecoderMode.HARDWARE,
@@ -59,6 +90,7 @@ data class PlaybackDiagnostics(
     val framesPerSecond: Float = 0f,
     val inputBitrateKbps: Int = 0,
     val decodedFrames: Int = 0,
+    val displayedFrames: Int = 0,
     val droppedFrames: Int = 0,
     val corruptedPackets: Int = 0
 ) {

@@ -1,0 +1,8 @@
+Smart library and black MP4 video fix.
+
+• New SMART tab with series and possible duplicates.
+• Filters by resolution, duration, size, and format.
+• Incremental scan with a change summary.
+• Automatic hardware-to-software fallback when audio advances but no frames are shown.
+• Position-preserving recovery that does not affect audio-only mode.
+• Technical panel with decoded, displayed, and dropped frames.

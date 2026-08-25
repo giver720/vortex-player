@@ -25,6 +25,10 @@ Mantener libVLC como único motor y añadir una capa determinista de inteligenci
 - permitir un segundo reintento seguro y detenerse después para evitar bucles;
 - conservar índice, posición, velocidad, audio y voluntad de reproducción al recuperar;
 - vigilar avance cada cuatro segundos y considerar bloqueo sólo tras 16 segundos en estado listo;
+- vigilar también los cuadros realmente mostrados: si el audio avanza al menos 3 segundos pero
+  hardware no muestra ninguno durante 8 segundos, reabrir automáticamente en software;
+- aplicar esa vigilancia sólo con una superficie conectada y recordar el fallback para ese medio
+  durante la sesión;
 - publicar estadísticas nativas como máximo una vez por segundo;
 - ofrecer un reintento manual en software desde un panel de diagnóstico.
 
@@ -71,9 +75,12 @@ la decisión de VLC como motor único.
 ## Análisis de compromisos
 
 Dos recuperaciones cubren el fallo habitual de MediaCodec y una reapertura limpia sin esconder
-errores permanentes. El watchdog sólo actúa en `STATE_READY` con intención de reproducir, por lo
-que no confunde pausa ni buffering deliberado con congelamiento. Una ventana de 16 segundos
-favorece evitar falsos positivos sobre una recuperación agresiva.
+errores permanentes. El watchdog de tiempo sólo actúa en `STATE_READY` con intención de
+reproducir, por lo que no confunde pausa ni buffering deliberado con congelamiento. Un segundo
+watchdog usa `displayedPictures`: requiere pista, superficie, estadísticas, tiempo de gracia y
+avance del reloj. Así detecta audio con pantalla negra sin degradar el modo solo-audio ni la
+reproducción en segundo plano. La ventana general de 16 segundos favorece evitar falsos positivos
+sobre una recuperación agresiva.
 
 La telemetría es local, no persiste historial y no sale del dispositivo. Su frecuencia de un
 segundo permite una UI útil sin consultar estadísticas nativas en cada evento de tiempo.
@@ -93,4 +100,5 @@ segundo permite una UI útil sin consultar estadísticas nativas en cada evento 
 3. [x] Añadir watchdog y límite de recuperaciones.
 4. [x] Exponer estadísticas VLC y panel visual.
 5. [x] Añadir pruebas JVM de clasificación y política.
-6. [ ] Ejecutar la matriz física de códecs y fabricantes.
+6. [x] Detectar audio con cero cuadros mostrados y degradar HW → software.
+7. [ ] Ejecutar la matriz física de códecs y fabricantes.

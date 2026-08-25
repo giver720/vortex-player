@@ -1,0 +1,8 @@
+Biblioteca inteligente y corrección de vídeo MP4 negro.
+
+• Nueva pestaña SMART con series y posibles duplicados.
+• Filtros por resolución, duración, tamaño y formato.
+• Escaneo incremental con resumen de cambios.
+• Fallback automático HW → software cuando avanza el audio pero no aparecen cuadros.
+• Recuperación conservando la posición y sin afectar el modo solo-audio.
+• Panel técnico con cuadros decodificados, mostrados y perdidos.

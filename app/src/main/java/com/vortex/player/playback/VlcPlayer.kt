@@ -89,8 +89,13 @@ class VlcPlayer(
     private var recoveryScheduled = false
     private var recovering = false
     private var lastProgressElapsedMs = SystemClock.elapsedRealtime()
+    private var lastDisplayedFrameElapsedMs = SystemClock.elapsedRealtime()
+    private var lastDisplayedFramePositionMs = 0L
+    private var lastDisplayedPictures = 0
+    private var voutCount = 0
     private var lastDiagnosticsElapsedMs = 0L
     private var activeMediaKey: String? = null
+    private val sessionSoftwareMediaKeys = mutableSetOf<String>()
     private var requestedAudioTrack: Int? = null
     private var requestedSubtitleTrack: Int = -1
     private var subtitleSelectionExplicit = false
@@ -120,7 +125,8 @@ class VlcPlayer(
 
     private val stallWatchdog = object : Runnable {
         override fun run() {
-            val stalledFor = SystemClock.elapsedRealtime() - lastProgressElapsedMs
+            val now = SystemClock.elapsedRealtime()
+            val stalledFor = now - lastProgressElapsedMs
             if (
                 wantsToPlay &&
                 vlcPlaybackState == Player.STATE_READY &&
@@ -130,6 +136,8 @@ class VlcPlayer(
                 scheduleRecovery(
                     reason = "La reproducción dejó de avanzar"
                 )
+            } else {
+                inspectVideoLiveness(now)
             }
             handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
         }
@@ -177,6 +185,7 @@ class VlcPlayer(
                 recovering = false
                 recoveryScheduled = false
                 lastProgressElapsedMs = SystemClock.elapsedRealtime()
+                resetVideoLivenessWatch(lastKnownPositionMs)
                 // Algunos dispositivos crean la salida de audio después de Playing; volver
                 // a mandar aquí el valor evita que el boost se pierda al cambiar de pista.
                 applyVlcVolume()
@@ -243,6 +252,9 @@ class VlcPlayer(
 
             MediaPlayer.Event.TimeChanged -> {
                 val next = event.timeChanged.coerceAtLeast(0L)
+                if (next + SEEK_RESET_THRESHOLD_MS < lastKnownPositionMs) {
+                    resetVideoLivenessWatch(next)
+                }
                 if (next != lastKnownPositionMs) lastProgressElapsedMs = SystemClock.elapsedRealtime()
                 lastKnownPositionMs = next
                 publishRuntimeDiagnostics()
@@ -251,6 +263,7 @@ class VlcPlayer(
             MediaPlayer.Event.LengthChanged -> refreshDuration()
 
             MediaPlayer.Event.Vout -> {
+                voutCount = event.voutCount
                 val vt = mediaPlayer.currentVideoTrack
                 videoSize = if (vt != null && vt.width > 0) {
                     VideoSize(vt.width, vt.height)
@@ -269,6 +282,52 @@ class VlcPlayer(
     }
 
     /**
+     * El reloj puede seguir avanzando gracias al audio aunque el decodificador de vídeo esté
+     * entregando cero imágenes. Las estadísticas `displayedPictures` de VLC permiten distinguir
+     * ese caso de un bloqueo general y cambiar a software sin intervención del usuario.
+     */
+    private fun inspectVideoLiveness(now: Long) {
+        if (!wantsToPlay || vlcPlaybackState != Player.STATE_READY || recoveryScheduled) return
+        val stats = runCatching { mediaPlayer.media?.stats }.getOrNull()
+        val displayed = stats?.displayedPictures
+        if (displayed != null && displayed > lastDisplayedPictures) {
+            lastDisplayedPictures = displayed
+            lastDisplayedFrameElapsedMs = now
+            lastDisplayedFramePositionMs = lastKnownPositionMs
+            return
+        }
+
+        val hasVideoTrack = runCatching {
+            mediaPlayer.videoTracksCount > 0 || mediaPlayer.currentVideoTrack != null || voutCount > 0
+        }.getOrDefault(false)
+        val shouldRecover = VideoLivenessPolicy.shouldFallbackToSoftware(
+            VideoLivenessSample(
+                playbackActive = true,
+                videoEnabled = videoEnabled,
+                outputAttached = videoLayout != null,
+                hasVideoTrack = hasVideoTrack,
+                statsAvailable = stats != null,
+                decoder = decoderMode,
+                elapsedWithoutDisplayedFrameMs = now - lastDisplayedFrameElapsedMs,
+                timelineAdvanceMs = (lastKnownPositionMs - lastDisplayedFramePositionMs)
+                    .coerceAtLeast(0L)
+            )
+        )
+        if (shouldRecover) {
+            scheduleRecovery(
+                reason = "El audio avanzó sin imagen; cambiando el vídeo de hardware a software"
+            )
+        }
+    }
+
+    private fun resetVideoLivenessWatch(positionMs: Long) {
+        lastDisplayedFrameElapsedMs = SystemClock.elapsedRealtime()
+        lastDisplayedFramePositionMs = positionMs.coerceAtLeast(0L)
+        lastDisplayedPictures = 0
+        voutCount = 0
+    }
+
+    /**
      * Reintento acotado: evita bucles infinitos y conserva el instante y la intención de play.
      * El primer fallo hardware degrada a software; el segundo limpia y reabre el mismo modo.
      */
@@ -279,6 +338,9 @@ class VlcPlayer(
         }
         val position = mediaPlayer.time.takeIf { it >= 0L } ?: lastKnownPositionMs
         val resumePlayback = wantsToPlay
+        if (decoderMode == DecoderMode.HARDWARE && decision.decoder == DecoderMode.SOFTWARE) {
+            activeMediaKey?.let(sessionSoftwareMediaKeys::add)
+        }
         decoderMode = decision.decoder
         recoveryCount++
         recovering = true
@@ -353,6 +415,7 @@ class VlcPlayer(
                 ?.let { (it * 8_000f).toInt().coerceAtLeast(0) }
                 ?: 0,
             decodedFrames = stats?.decodedVideo ?: 0,
+            displayedFrames = stats?.displayedPictures ?: 0,
             droppedFrames = stats?.lostPictures ?: 0,
             corruptedPackets = stats?.demuxCorrupted ?: 0
         )
@@ -586,6 +649,7 @@ class VlcPlayer(
 
     private fun seekToVlc(positionMs: Long) {
         lastKnownPositionMs = positionMs
+        resetVideoLivenessWatch(positionMs)
         mediaPlayer.time = positionMs
     }
 
@@ -613,7 +677,11 @@ class VlcPlayer(
             lowRamDevice = lowRamDevice
         )
         if (!isRecovery) {
-            decoderMode = activePlan.decoder
+            decoderMode = if (mediaKey in sessionSoftwareMediaKeys) {
+                DecoderMode.SOFTWARE
+            } else {
+                activePlan.decoder
+            }
             recoveryCount = 0
             recovering = false
             recoveryScheduled = false
@@ -656,6 +724,7 @@ class VlcPlayer(
 
         lastKnownPositionMs = startPositionMs
         lastProgressElapsedMs = SystemClock.elapsedRealtime()
+        resetVideoLivenessWatch(startPositionMs)
         lastDiagnosticsElapsedMs = 0L
         durationMs = C.TIME_UNSET
         pendingError = null
@@ -691,6 +760,7 @@ class VlcPlayer(
 
     override fun retryInSafeMode() {
         if (playlist.isEmpty()) return
+        activeMediaKey?.let(sessionSoftwareMediaKeys::add)
         decoderMode = DecoderMode.SOFTWARE
         recoveryCount = 0
         recovering = true
@@ -770,6 +840,7 @@ class VlcPlayer(
             )
         )
         mediaPlayer.attachViews(layout, null, true, false)
+        resetVideoLivenessWatch(lastKnownPositionMs)
     }
 
     override fun detachVideoOutput() {
@@ -801,6 +872,7 @@ class VlcPlayer(
         const val STALL_TIMEOUT_MS = 16_000L
         const val RECOVERY_OPEN_TIMEOUT_MS = 3_000L
         const val DIAGNOSTICS_INTERVAL_MS = 1_000L
+        const val SEEK_RESET_THRESHOLD_MS = 1_000L
 
         val AVAILABLE_COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(

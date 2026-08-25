@@ -88,6 +88,8 @@ atrás sin depender de que alguien recuerde volver aquí.
 ## Otras funciones
 
 - Biblioteca por MediaStore con miniaturas extraídas del propio vídeo y caché en disco.
+- Biblioteca inteligente con escaneo incremental, filtros por resolución, duración, tamaño y
+  formato, agrupación automática de series y revisión segura de posibles duplicados.
 - Árbol de carpetas navegable, con ramas plegables y migas de pan.
 - Búsqueda unificada por nombre de fichero, carpeta y ruta, con resultados agrupados.
 - Orden por fecha, nombre, duración, tamaño o resolución, y vista rejilla o lista.

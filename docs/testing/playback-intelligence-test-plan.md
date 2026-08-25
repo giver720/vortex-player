@@ -17,6 +17,8 @@
 - RTSP fuerza TCP.
 - `lowRamDevice` reduce caché sin desactivar hardware.
 - Primer fallo cambia HW → software, el segundo mantiene software y el tercero se expone.
+- Audio avanzando sin cuadros mostrados durante la gracia activa el fallback de hardware.
+- Solo-audio, superficie desconectada, estadísticas ausentes y software no activan ese fallback.
 - El formato de resolución no inventa dimensiones ausentes.
 
 ### Integración Android
@@ -25,6 +27,7 @@
 - El panel observa el `StateFlow` sin bloquear el hilo principal.
 - Cambiar medio reinicia contador y plan; cambiar pista no lo hace.
 - Reintento seguro conserva posición aproximada, velocidad, boost, pista y salida de vídeo.
+- El contador de cuadros mostrados aparece en el panel y avanza durante reproducción normal.
 - Liberar el player elimina el watchdog y no deja callbacks posteriores.
 
 ### E2E manual en dispositivos
@@ -33,11 +36,13 @@
 2. Incluir 720p, 1080p, 4K, HDR10 y un archivo truncado o deliberadamente dañado.
 3. Probar al menos un móvil Qualcomm, MediaTek y un dispositivo Android de memoria baja.
 4. Confirmar que un fallo hardware cambia a `SOFTWARE`, conserva el instante y sólo suma una recuperación.
-5. Dejar una fuente realmente congelada más de 16 s; comprobar recuperación sin bucle.
-6. Probar HTTP progresivo, HLS VOD/live y RTSP con red estable, lenta y reconexión.
-7. Abrir el panel y comparar códec, resolución y FPS con `MediaInfo` o datos conocidos.
-8. Pausar más de 30 s: el watchdog no debe actuar. Repetir durante buffering.
-9. Probar PiP, popup, pantalla apagada, auriculares y pérdida/recuperación de audio focus.
+5. Reproducir un MP4 que dé audio con pantalla negra en HW; debe pasar a `SW` conservando el
+   instante y empezar a mostrar imagen tras una única recuperación.
+6. Dejar una fuente realmente congelada más de 16 s; comprobar recuperación sin bucle.
+7. Probar HTTP progresivo, HLS VOD/live y RTSP con red estable, lenta y reconexión.
+8. Abrir el panel y comparar códec, resolución, FPS y cuadros mostrados con datos conocidos.
+9. Pausar más de 30 s: ningún watchdog debe actuar. Repetir durante buffering.
+10. Probar PiP, popup, pantalla apagada, auriculares y pérdida/recuperación de audio focus.
 
 ## Casos de fallo y seguridad
 

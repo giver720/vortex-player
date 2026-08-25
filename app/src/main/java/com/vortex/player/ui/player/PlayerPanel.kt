@@ -216,7 +216,8 @@ private fun DiagnosticsPanel(
         item {
             DiagnosticRow(
                 "CUADROS",
-                "${diagnostics.decodedFrames} decodificados · ${diagnostics.droppedFrames} perdidos"
+                "${diagnostics.decodedFrames} decodificados · " +
+                    "${diagnostics.displayedFrames} mostrados · ${diagnostics.droppedFrames} perdidos"
             )
         }
         item { DiagnosticRow("PAQUETES DAÑADOS", diagnostics.corruptedPackets.toString()) }

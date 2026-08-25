@@ -88,6 +88,69 @@ class PlaybackIntelligenceTest {
     }
 
     @Test
+    fun `audio progress without displayed video triggers hardware fallback`() {
+        val blackVideo = VideoLivenessSample(
+            playbackActive = true,
+            videoEnabled = true,
+            outputAttached = true,
+            hasVideoTrack = true,
+            statsAvailable = true,
+            decoder = DecoderMode.HARDWARE,
+            elapsedWithoutDisplayedFrameMs = VideoLivenessPolicy.FRAME_TIMEOUT_MS,
+            timelineAdvanceMs = VideoLivenessPolicy.MIN_TIMELINE_ADVANCE_MS
+        )
+
+        assertTrue(VideoLivenessPolicy.shouldFallbackToSoftware(blackVideo))
+    }
+
+    @Test
+    fun `video watchdog ignores audio only detached and software playback`() {
+        val base = VideoLivenessSample(
+            playbackActive = true,
+            videoEnabled = true,
+            outputAttached = true,
+            hasVideoTrack = true,
+            statsAvailable = true,
+            decoder = DecoderMode.HARDWARE,
+            elapsedWithoutDisplayedFrameMs = 20_000L,
+            timelineAdvanceMs = 10_000L
+        )
+
+        assertFalse(VideoLivenessPolicy.shouldFallbackToSoftware(base.copy(videoEnabled = false)))
+        assertFalse(VideoLivenessPolicy.shouldFallbackToSoftware(base.copy(outputAttached = false)))
+        assertFalse(VideoLivenessPolicy.shouldFallbackToSoftware(base.copy(hasVideoTrack = false)))
+        assertFalse(
+            VideoLivenessPolicy.shouldFallbackToSoftware(base.copy(decoder = DecoderMode.SOFTWARE))
+        )
+    }
+
+    @Test
+    fun `video watchdog waits for stats grace and timeline evidence`() {
+        val base = VideoLivenessSample(
+            playbackActive = true,
+            videoEnabled = true,
+            outputAttached = true,
+            hasVideoTrack = true,
+            statsAvailable = true,
+            decoder = DecoderMode.HARDWARE,
+            elapsedWithoutDisplayedFrameMs = VideoLivenessPolicy.FRAME_TIMEOUT_MS,
+            timelineAdvanceMs = VideoLivenessPolicy.MIN_TIMELINE_ADVANCE_MS
+        )
+
+        assertFalse(VideoLivenessPolicy.shouldFallbackToSoftware(base.copy(statsAvailable = false)))
+        assertFalse(
+            VideoLivenessPolicy.shouldFallbackToSoftware(
+                base.copy(elapsedWithoutDisplayedFrameMs = VideoLivenessPolicy.FRAME_TIMEOUT_MS - 1)
+            )
+        )
+        assertFalse(
+            VideoLivenessPolicy.shouldFallbackToSoftware(
+                base.copy(timelineAdvanceMs = VideoLivenessPolicy.MIN_TIMELINE_ADVANCE_MS - 1)
+            )
+        )
+    }
+
+    @Test
     fun `diagnostics formats unavailable and known resolution`() {
         assertEquals("—", PlaybackDiagnostics().resolutionLabel)
         assertEquals("3840 × 2160", PlaybackDiagnostics(width = 3840, height = 2160).resolutionLabel)
