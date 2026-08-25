@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vortex.player.audio.AudioCapabilities
 import com.vortex.player.audio.AudioOutput
+import com.vortex.player.audio.AudioProMode
+import com.vortex.player.audio.AudioProProfiles
 import com.vortex.player.audio.AudioPreferences
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
@@ -80,12 +82,23 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setEnabled(enabled: Boolean) = update { it.copy(enabled = enabled) }
+    fun setEnabled(enabled: Boolean) = update {
+        it.copy(enabled = enabled, bypassOn = if (enabled) false else it.bypassOn)
+    }
+
+    fun toggleBypass() = update { it.copy(bypassOn = !it.bypassOn) }
+
+    fun setAudioProMode(mode: AudioProMode) = update { AudioProProfiles.apply(mode, it) }
 
     fun setScope(scope: AudioScope) = update { it.copy(scope = scope) }
 
     fun setPreset(preset: EqPreset) = update {
-        it.copy(preset = preset, bands = preset.gains, equalizerOn = true)
+        it.copy(
+            preset = preset,
+            bands = preset.gains,
+            equalizerOn = true,
+            proMode = AudioProMode.CUSTOM
+        )
     }
 
     /**
@@ -98,39 +111,82 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         if (index in base.indices) {
             base[index] = gain.coerceIn(EQ_MIN_DB, EQ_MAX_DB)
         }
-        current.copy(preset = null, bands = base, equalizerOn = true)
+        current.copy(
+            preset = null,
+            bands = base,
+            equalizerOn = true,
+            proMode = AudioProMode.CUSTOM
+        )
     }
 
-    fun toggleEqualizer() = update { it.copy(equalizerOn = !it.equalizerOn) }
+    fun toggleEqualizer() = update {
+        it.copy(equalizerOn = !it.equalizerOn, proMode = AudioProMode.CUSTOM)
+    }
 
-    fun setBassBoost(value: Int) = update { it.copy(bassBoost = value, bassBoostOn = value > 0) }
-    fun toggleBassBoost() = update { it.copy(bassBoostOn = !it.bassBoostOn) }
+    fun setBassBoost(value: Int) = update {
+        it.copy(bassBoost = value, bassBoostOn = value > 0, proMode = AudioProMode.CUSTOM)
+    }
+    fun toggleBassBoost() = update {
+        it.copy(bassBoostOn = !it.bassBoostOn, proMode = AudioProMode.CUSTOM)
+    }
 
-    fun setClarity(value: Int) = update { it.copy(clarity = value, clarityOn = value > 0) }
-    fun toggleClarity() = update { it.copy(clarityOn = !it.clarityOn) }
+    fun setClarity(value: Int) = update {
+        it.copy(clarity = value, clarityOn = value > 0, proMode = AudioProMode.CUSTOM)
+    }
+    fun toggleClarity() = update {
+        it.copy(clarityOn = !it.clarityOn, proMode = AudioProMode.CUSTOM)
+    }
 
-    fun setAmbience(value: Int) = update { it.copy(ambience = value, ambienceOn = value > 0) }
-    fun toggleAmbience() = update { it.copy(ambienceOn = !it.ambienceOn) }
+    fun setAmbience(value: Int) = update {
+        it.copy(ambience = value, ambienceOn = value > 0, proMode = AudioProMode.CUSTOM)
+    }
+    fun toggleAmbience() = update {
+        it.copy(ambienceOn = !it.ambienceOn, proMode = AudioProMode.CUSTOM)
+    }
 
     fun setVirtualizer(value: Int) =
-        update { it.copy(virtualizer = value, virtualizerOn = value > 0) }
-    fun toggleVirtualizer() = update { it.copy(virtualizerOn = !it.virtualizerOn) }
+        update {
+            it.copy(
+                virtualizer = value,
+                virtualizerOn = value > 0,
+                proMode = AudioProMode.CUSTOM
+            )
+        }
+    fun toggleVirtualizer() = update {
+        it.copy(virtualizerOn = !it.virtualizerOn, proMode = AudioProMode.CUSTOM)
+    }
 
-    fun setBoost(db: Float) = update { it.copy(boostDb = db, boostOn = db > 0f) }
+    fun setBoost(db: Float) = update {
+        it.copy(boostDb = db, boostOn = db > 0f, proMode = AudioProMode.CUSTOM)
+    }
     fun toggleBoost() = update {
         if (it.boostOn) {
-            it.copy(boostOn = false)
+            it.copy(boostOn = false, proMode = AudioProMode.CUSTOM)
         } else {
             // Encender un boost guardado en 0 dB parecía funcionar pero no hacía nada.
-            it.copy(boostOn = true, boostDb = it.boostDb.takeIf { db -> db > 0f } ?: 6f)
+            it.copy(
+                boostOn = true,
+                boostDb = it.boostDb.takeIf { db -> db > 0f } ?: 6f,
+                proMode = AudioProMode.CUSTOM
+            )
         }
     }
 
     fun setCompressor(amount: Float) =
-        update { it.copy(compressor = amount, compressorOn = amount > 0f) }
-    fun toggleCompressor() = update { it.copy(compressorOn = !it.compressorOn) }
+        update {
+            it.copy(
+                compressor = amount,
+                compressorOn = amount > 0f,
+                proMode = AudioProMode.CUSTOM
+            )
+        }
+    fun toggleCompressor() = update {
+        it.copy(compressorOn = !it.compressorOn, proMode = AudioProMode.CUSTOM)
+    }
 
-    fun toggleLimiter() = update { it.copy(limiterOn = !it.limiterOn) }
+    fun toggleLimiter() = update {
+        it.copy(limiterOn = !it.limiterOn, proMode = AudioProMode.CUSTOM)
+    }
 
     fun reset() {
         viewModelScope.launch {

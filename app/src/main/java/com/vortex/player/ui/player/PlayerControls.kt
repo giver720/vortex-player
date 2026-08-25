@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
@@ -63,7 +64,7 @@ import com.vortex.player.ui.common.formatRemaining
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 
-enum class Panel { SPEED, SLEEP, AUDIO, SUBTITLES, ASPECT }
+enum class Panel { SPEED, SLEEP, AUDIO, SUBTITLES, ASPECT, DIAGNOSTICS }
 
 @Composable
 fun ControlsOverlay(
@@ -171,6 +172,13 @@ fun ControlsOverlay(
                     }
                     SleepBadge()
                 }
+            }
+            IconButton(onClick = { onOpenPanel(Panel.DIAGNOSTICS) }) {
+                Icon(
+                    Icons.Filled.Info,
+                    contentDescription = "Diagnóstico de reproducción",
+                    tint = VortexPalette.Cyan
+                )
             }
             IconButton(onClick = onToggleLock) {
                 Icon(Icons.Filled.LockOpen, contentDescription = "Bloquear", tint = VortexPalette.TextMid)

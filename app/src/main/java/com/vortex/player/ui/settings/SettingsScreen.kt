@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,8 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortex.player.audio.AudioCapabilities
 import com.vortex.player.audio.AudioOutput
+import com.vortex.player.audio.AudioProMode
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
+import com.vortex.player.audio.ClippingRisk
 import com.vortex.player.audio.EqPreset
 import com.vortex.player.audio.VlcEqualizerPlanner
 import com.vortex.player.spotify.SpotifyAccountState
@@ -67,7 +70,7 @@ fun SettingsScreen(
     val output by viewModel.output.collectAsStateWithLifecycle()
     val perOutput by viewModel.perOutput.collectAsStateWithLifecycle()
     val spotifyAccount by viewModel.spotifyAccount.collectAsStateWithLifecycle()
-    val active = settings.enabled
+    val active = settings.enabled && !settings.bypassOn
 
     Box(Modifier.fillMaxSize().background(VortexPalette.Graphite)) {
         LazyColumn(
@@ -134,6 +137,14 @@ fun SettingsScreen(
             }
 
             item { MasterSwitch(settings, viewModel::setEnabled) }
+
+            item {
+                AudioProPanel(
+                    settings = settings,
+                    onMode = viewModel::setAudioProMode,
+                    onToggleBypass = viewModel::toggleBypass
+                )
+            }
 
             item { ScopeSelector(settings, caps, viewModel::setScope) }
 
@@ -220,6 +231,8 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            item { SignalReport(settings) }
 
             if (caps.hasCompressor) {
                 item {
@@ -463,7 +476,11 @@ private fun MasterSwitch(settings: AudioSettings, onToggle: (Boolean) -> Unit) {
                 color = VortexPalette.TextHigh
             )
             Text(
-                text = "Ecualizador, volumen extra, nivelador y espacialidad",
+                text = if (settings.bypassOn) {
+                    "EQ y boost en bypass · tus ajustes siguen guardados"
+                } else {
+                    "Ecualizador VLC, Audio Pro y volumen extra"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = VortexPalette.TextLow
             )
@@ -477,6 +494,131 @@ private fun MasterSwitch(settings: AudioSettings, onToggle: (Boolean) -> Unit) {
                 uncheckedThumbColor = VortexPalette.TextLow,
                 uncheckedTrackColor = VortexPalette.GraphiteHigh
             )
+        )
+    }
+}
+
+@Composable
+private fun AudioProPanel(
+    settings: AudioSettings,
+    onMode: (AudioProMode) -> Unit,
+    onToggleBypass: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Cyan.copy(alpha = 0.45f), VortexShapes.medium)
+            .padding(vertical = 12.dp)
+    ) {
+        Text(
+            text = "AUDIO PRO",
+            style = MaterialTheme.typography.labelLarge,
+            color = VortexPalette.Cyan,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Text(
+            text = "Un toque configura toda la cadena. PERSONAL aparece al mover un control.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AudioProMode.entries.forEach { mode ->
+                PresetChip(
+                    label = mode.label,
+                    selected = settings.proMode == mode,
+                    enabled = true
+                ) { onMode(mode) }
+            }
+        }
+        Text(
+            text = settings.proMode.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextMid,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+        )
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PresetChip(
+                label = "TONO ORIGINAL",
+                selected = settings.bypassOn,
+                enabled = settings.enabled
+            ) { if (!settings.bypassOn) onToggleBypass() }
+            PresetChip(
+                label = "PROCESADO",
+                selected = settings.enabled && !settings.bypassOn,
+                enabled = settings.enabled
+            ) { if (settings.bypassOn) onToggleBypass() }
+        }
+        Text(
+            text = "AUTONORMALIZACIÓN · ReplayGain por pista y protección de picos se " +
+                "aplican cuando el archivo incluye esas etiquetas; sin etiquetas queda en 0 dB.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun SignalReport(settings: AudioSettings) {
+    val report = VlcEqualizerPlanner.analyze(settings)
+    val color = when (report.risk) {
+        ClippingRisk.SAFE -> VortexPalette.Neon
+        ClippingRisk.CAUTION -> VortexPalette.Amber
+        ClippingRisk.HIGH -> VortexPalette.Magenta
+    }
+    val progress = (report.estimatedPeakDb.coerceAtLeast(0f) / 15f).coerceIn(0f, 1f)
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "DIAGNÓSTICO DE GANANCIA",
+                style = MaterialTheme.typography.labelLarge,
+                color = VortexPalette.TextHigh,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = report.risk.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = color
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 7.dp)
+                .height(4.dp)
+                .background(VortexPalette.Outline, VortexShapes.small)
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(if (progress == 0f) 0.015f else progress)
+                    .height(4.dp)
+                    .background(color, VortexShapes.small)
+            )
+        }
+        Text(
+            text = if (!settings.enabled || settings.bypassOn) {
+                "Ecualizador y boost en bypass: 0 dB añadidos por esas etapas."
+            } else {
+                (
+                    "Pico teórico: %+.1f dB. Es una estimación de la configuración, no " +
+                        "un medidor del audio en tiempo real."
+                    ).format(report.estimatedPeakDb)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 6.dp)
         )
     }
 }

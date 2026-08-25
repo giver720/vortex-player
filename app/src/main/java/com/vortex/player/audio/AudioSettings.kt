@@ -15,8 +15,7 @@ private val Context.audioDataStore by preferencesDataStore("vortex_audio")
  * Bandas del ecualizador, en hercios.
  *
  * Diez bandas en octavas, que es el reparto clásico y el que espera cualquiera que haya
- * tocado un ecualizador. El del sistema suele dar sólo cinco; estas las definimos nosotros
- * sobre `DynamicsProcessing`, así que no dependen de lo que traiga el móvil.
+ * tocado un ecualizador. Se interpolan sobre las bandas nativas que exponga libVLC.
  */
 val EQ_BANDS = listOf(31, 62, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000)
 
@@ -76,6 +75,9 @@ enum class AudioScope(val label: String) {
 
 data class AudioSettings(
     val enabled: Boolean = false,
+    /** A/B instantáneo: conserva todos los ajustes, pero entrega el tono original. */
+    val bypassOn: Boolean = false,
+    val proMode: AudioProMode = AudioProMode.CUSTOM,
     val scope: AudioScope = AudioScope.VORTEX,
 
     /** Ganancia de cada banda en dB. Su tamaño coincide con [EQ_BANDS]. */
@@ -142,6 +144,8 @@ object AudioPreferences {
     private fun suffix(output: AudioOutput?): String = output?.let { "_${it.name}" }.orEmpty()
 
     private fun enabledKey(o: AudioOutput?) = booleanPreferencesKey("audio_enabled_v2${suffix(o)}")
+    private fun bypassKey(o: AudioOutput?) = booleanPreferencesKey("audio_bypass${suffix(o)}")
+    private fun proModeKey(o: AudioOutput?) = stringPreferencesKey("audio_pro_mode${suffix(o)}")
     private fun scopeKey(o: AudioOutput?) = stringPreferencesKey("audio_scope${suffix(o)}")
     private fun bandsKey(o: AudioOutput?) = stringPreferencesKey("eq_bands_v2${suffix(o)}")
     private fun presetKey(o: AudioOutput?) = stringPreferencesKey("eq_preset_v2${suffix(o)}")
@@ -176,6 +180,10 @@ object AudioPreferences {
         context.audioDataStore.data.map { prefs ->
             AudioSettings(
                 enabled = prefs[enabledKey(output)] ?: false,
+                bypassOn = prefs[bypassKey(output)] ?: false,
+                proMode = prefs[proModeKey(output)]
+                    ?.let { runCatching { AudioProMode.valueOf(it) }.getOrNull() }
+                    ?: AudioProMode.CUSTOM,
                 scope = prefs[scopeKey(output)]
                     ?.let { runCatching { AudioScope.valueOf(it) }.getOrNull() }
                     ?: AudioScope.VORTEX,
@@ -213,6 +221,8 @@ object AudioPreferences {
     suspend fun save(context: Context, settings: AudioSettings, output: AudioOutput? = null) {
         context.audioDataStore.edit { prefs ->
             prefs[enabledKey(output)] = settings.enabled
+            prefs[bypassKey(output)] = settings.bypassOn
+            prefs[proModeKey(output)] = settings.proMode.name
             prefs[scopeKey(output)] = settings.scope.name
             prefs[bandsKey(output)] = settings.bands.joinToString(",")
             prefs[presetKey(output)] = settings.preset?.name ?: MANUAL

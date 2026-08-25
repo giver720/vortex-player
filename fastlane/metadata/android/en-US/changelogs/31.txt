@@ -1,0 +1,8 @@
+Audio Pro, advanced subtitles, and intelligent playback.
+
+• Safe, Powerful, Night, and Voice profiles, A/B comparison, and clipping risk alerts.
+• Two simultaneous subtitles with independent delay, size, and background.
+• Optional OpenSubtitles search with an API key encrypted on the device.
+• Adaptive buffering for local files, HTTP, HLS, and RTSP.
+• Automatic hardware-to-software recovery preserving position, tracks, and subtitles.
+• Diagnostics panel with codec, FPS, bitrate, and dropped frames.

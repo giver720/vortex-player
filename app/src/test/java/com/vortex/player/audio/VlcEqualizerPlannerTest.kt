@@ -19,6 +19,23 @@ class VlcEqualizerPlannerTest {
     }
 
     @Test
+    fun `original bypass removes equalizer and boost without losing settings`() {
+        val settings = AudioSettings(
+            enabled = true,
+            bypassOn = true,
+            preset = EqPreset.ROCK,
+            boostOn = true,
+            boostDb = 9f
+        )
+
+        val plan = VlcEqualizerPlanner.build(settings, vlcBands)
+
+        assertFalse(plan.enabled)
+        assertEquals(100, plan.volumePercent)
+        assertTrue(plan.bandGainsDb.isEmpty())
+    }
+
+    @Test
     fun `flat preset maps to zero gain`() {
         val plan = VlcEqualizerPlanner.build(AudioSettings(enabled = true), vlcBands)
 
@@ -109,5 +126,26 @@ class VlcEqualizerPlannerTest {
 
         assertTrue(plan.volumePercent >= 177)
         assertEquals(0f, plan.preampDb, 0.001f)
+    }
+
+    @Test
+    fun `signal diagnosis distinguishes protected and risky chains`() {
+        val safe = VlcEqualizerPlanner.analyze(
+            AudioSettings(enabled = true, preset = EqPreset.ELECTRONIC, limiterOn = true)
+        )
+        val risky = VlcEqualizerPlanner.analyze(
+            AudioSettings(
+                enabled = true,
+                preset = EqPreset.ELECTRONIC,
+                boostOn = true,
+                boostDb = 9f,
+                limiterOn = false
+            )
+        )
+
+        assertEquals(ClippingRisk.SAFE, safe.risk)
+        assertTrue(safe.estimatedPeakDb <= 0.5f)
+        assertEquals(ClippingRisk.HIGH, risky.risk)
+        assertTrue(risky.estimatedPeakDb > 6f)
     }
 }

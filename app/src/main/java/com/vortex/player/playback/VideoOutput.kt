@@ -1,6 +1,7 @@
 package com.vortex.player.playback
 
 import android.widget.FrameLayout
+import kotlinx.coroutines.flow.StateFlow
 
 /** Una pista seleccionable (audio o subtítulo) tal y como la ve la interfaz. */
 data class TrackOption(
@@ -19,6 +20,12 @@ interface EngineControls {
     /** Nombre del motor único que se muestra en el HUD. */
     val engineName: String
 
+    /** Telemetría ligera del medio actual, actualizada como máximo una vez por segundo. */
+    val diagnostics: StateFlow<PlaybackDiagnostics>
+
+    /** Reabre el medio actual con decodificación por software conservando la posición. */
+    fun retryInSafeMode() {}
+
     val audioTracks: List<TrackOption>
     val subtitleTracks: List<TrackOption>
 
@@ -26,6 +33,11 @@ interface EngineControls {
 
     /** `null` desactiva los subtítulos. */
     fun selectSubtitleTrack(id: String?)
+
+    /** Retardo de la pista principal en milisegundos; admite valores negativos. */
+    val subtitleDelayMs: Long get() = 0L
+
+    fun setSubtitleDelayMs(delayMs: Long) {}
 
     /**
      * El interruptor que convierte un MP4 en un MP3: apaga la decodificación de vídeo

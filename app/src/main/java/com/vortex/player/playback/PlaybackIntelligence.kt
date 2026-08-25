@@ -1,0 +1,108 @@
+package com.vortex.player.playback
+
+enum class PlaybackSourceKind(val label: String) {
+    LOCAL("LOCAL"),
+    HTTP("WEB"),
+    HLS("HLS"),
+    RTSP("RTSP"),
+    OTHER_NETWORK("RED")
+}
+
+enum class DecoderMode(val label: String) {
+    HARDWARE("HARDWARE"),
+    SOFTWARE("SOFTWARE");
+
+    val shortLabel: String get() = if (this == HARDWARE) "HW" else "SW"
+}
+
+enum class PlaybackHealth(val label: String) {
+    IDLE("EN ESPERA"),
+    OPENING("ABRIENDO"),
+    BUFFERING("CARGANDO"),
+    PLAYING("ESTABLE"),
+    RECOVERING("RECUPERANDO"),
+    ERROR("ERROR")
+}
+
+data class PlaybackPlan(
+    val source: PlaybackSourceKind,
+    val decoder: DecoderMode,
+    val cacheMs: Int,
+    val mediaOptions: List<String>
+)
+
+data class RecoveryDecision(
+    val shouldRetry: Boolean,
+    val decoder: DecoderMode
+)
+
+object PlaybackRecoveryPolicy {
+    const val MAX_AUTOMATIC_RECOVERIES = 2
+
+    fun decide(currentDecoder: DecoderMode, completedRecoveries: Int): RecoveryDecision = when {
+        completedRecoveries >= MAX_AUTOMATIC_RECOVERIES -> RecoveryDecision(false, currentDecoder)
+        currentDecoder == DecoderMode.HARDWARE -> RecoveryDecision(true, DecoderMode.SOFTWARE)
+        else -> RecoveryDecision(true, DecoderMode.SOFTWARE)
+    }
+}
+
+data class PlaybackDiagnostics(
+    val source: PlaybackSourceKind = PlaybackSourceKind.LOCAL,
+    val decoder: DecoderMode = DecoderMode.HARDWARE,
+    val health: PlaybackHealth = PlaybackHealth.IDLE,
+    val cacheMs: Int = 0,
+    val recoveryCount: Int = 0,
+    val lastRecovery: String? = null,
+    val codec: String? = null,
+    val width: Int = 0,
+    val height: Int = 0,
+    val framesPerSecond: Float = 0f,
+    val inputBitrateKbps: Int = 0,
+    val decodedFrames: Int = 0,
+    val droppedFrames: Int = 0,
+    val corruptedPackets: Int = 0
+) {
+    val resolutionLabel: String
+        get() = if (width > 0 && height > 0) "${width} × $height" else "—"
+}
+
+/** Selecciona opciones conservadoras sin depender de clases Android, para poder probarlo en JVM. */
+object PlaybackIntelligencePlanner {
+    fun plan(uri: String, mimeType: String?, lowRamDevice: Boolean): PlaybackPlan {
+        val normalized = uri.lowercase()
+        val mime = mimeType.orEmpty().lowercase()
+        val scheme = normalized.substringBefore(':', missingDelimiterValue = "")
+        val source = when {
+            scheme == "rtsp" -> PlaybackSourceKind.RTSP
+            normalized.contains(".m3u8") || mime.contains("mpegurl") -> PlaybackSourceKind.HLS
+            scheme == "http" || scheme == "https" -> PlaybackSourceKind.HTTP
+            scheme in setOf("rtmp", "mms", "udp", "tcp") -> PlaybackSourceKind.OTHER_NETWORK
+            else -> PlaybackSourceKind.LOCAL
+        }
+        val cacheMs = when (source) {
+            PlaybackSourceKind.LOCAL -> if (lowRamDevice) 200 else 350
+            PlaybackSourceKind.HTTP -> if (lowRamDevice) 1_800 else 2_500
+            PlaybackSourceKind.HLS -> if (lowRamDevice) 2_500 else 4_000
+            PlaybackSourceKind.RTSP -> if (lowRamDevice) 1_200 else 1_800
+            PlaybackSourceKind.OTHER_NETWORK -> if (lowRamDevice) 1_800 else 3_000
+        }
+        val options = buildList {
+            if (source == PlaybackSourceKind.LOCAL) {
+                add(":file-caching=$cacheMs")
+            } else {
+                add(":network-caching=$cacheMs")
+                add(":live-caching=$cacheMs")
+            }
+            if (source == PlaybackSourceKind.HTTP || source == PlaybackSourceKind.HLS) {
+                add(":http-reconnect")
+            }
+            if (source == PlaybackSourceKind.RTSP) add(":rtsp-tcp")
+        }
+        return PlaybackPlan(
+            source = source,
+            decoder = DecoderMode.HARDWARE,
+            cacheMs = cacheMs,
+            mediaOptions = options
+        )
+    }
+}

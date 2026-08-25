@@ -31,7 +31,7 @@ object VlcEqualizerPlanner {
     private val clarityCurve = listOf(0f, 0f, 0f, 0f, 0.1f, 0.35f, 0.8f, 1f, 0.85f, 0.4f)
 
     fun build(settings: AudioSettings, vlcFrequenciesHz: List<Float>): VlcEqualizerPlan {
-        if (!settings.enabled) {
+        if (!settings.enabled || settings.bypassOn) {
             return VlcEqualizerPlan(false, 0f, NORMAL_VOLUME_PERCENT, emptyList())
         }
 
@@ -87,6 +87,29 @@ object VlcEqualizerPlanner {
         val stageDb = boostDb.coerceIn(0f, MAX_VOLUME_STAGE_DB)
         return (NORMAL_VOLUME_PERCENT * 10.0.pow(stageDb / 20.0)).roundToInt()
             .coerceIn(NORMAL_VOLUME_PERCENT, MAX_VOLUME_PERCENT)
+    }
+
+    /**
+     * Estimación preventiva a partir de las ganancias configuradas. No es un vúmetro:
+     * libVLC no entrega las muestras PCM ni el pico real a su API Java.
+     */
+    fun analyze(settings: AudioSettings): AudioSignalReport {
+        val plan = build(settings, EQ_BANDS.map(Int::toFloat))
+        if (!plan.enabled) return AudioSignalReport(0f, ClippingRisk.SAFE)
+
+        val volumeDb = if (settings.boostOn) {
+            settings.boostDb.coerceIn(0f, AudioSettings.MAX_BOOST_DB)
+                .coerceAtMost(MAX_VOLUME_STAGE_DB)
+        } else {
+            0f
+        }
+        val estimated = (plan.bandGainsDb.maxOrNull() ?: 0f) + plan.preampDb + volumeDb
+        val risk = when {
+            estimated <= 0.5f -> ClippingRisk.SAFE
+            estimated <= 6f -> ClippingRisk.CAUTION
+            else -> ClippingRisk.HIGH
+        }
+        return AudioSignalReport(estimated, risk)
     }
 
     private fun interpolate(frequencyHz: Float, gains: List<Float>): Float {

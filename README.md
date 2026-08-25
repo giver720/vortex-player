@@ -16,10 +16,13 @@ y vídeo. El contenedor `SimpleBasePlayer` mantiene la integración con `MediaSe
 lo que notificación, pantalla de bloqueo, mandos Bluetooth, ventana flotante y controles
 de Android continúan funcionando sin introducir un segundo motor multimedia.
 
-**Sonido procesado dentro de VLC.** Ecualizador de diez bandas, presets, graves,
-claridad y volumen extra ya no dependen de una sesión de efectos Android. El boost usa
-primero el volumen software nativo de VLC hasta 200 % y, a partir de ahí, su preamplificador.
-Los perfiles por altavoz, cable y Bluetooth se aplican directamente al motor.
+**Audio Pro dentro de VLC.** Ecualizador de diez bandas, presets, graves, claridad y volumen
+extra ya no dependen de una sesión de efectos Android. Los modos Seguro, Potente, Noche y Voz
+configuran toda la cadena con un toque; Tono original/Procesado permite comparar A/B la curva y
+el boost sin perder los ajustes. El boost usa primero el volumen software nativo de VLC hasta 200 % y, a partir de ahí,
+su preamplificador. Un diagnóstico de ganancia avisa del riesgo teórico de clipping, y ReplayGain
+normaliza automáticamente las pistas que incluyen esas etiquetas. Los perfiles por altavoz,
+cable y Bluetooth se aplican directamente al motor.
 
 **Un MP4 suena como un MP3.** El modo solo-audio apaga la decodificación de vídeo sin
 tocar el audio ni la posición: VLC desactiva la pista con `setVideoTrackEnabled(false)`.
@@ -71,6 +74,12 @@ la cuenta se eliminan sus datos de la caché.
 18:9, 21:9, 1:1) para cuando un fichero trae mal los metadatos, más zoom por pellizco
 encima de cualquier preset.
 
+**Motor de reproducción inteligente.** Vórtex ajusta el búfer según sea un archivo local,
+HTTP, HLS o RTSP, comienza con decodificación hardware y cambia automáticamente a software
+si el decodificador del dispositivo falla o la reproducción deja de avanzar. El panel del
+reproductor muestra fuente, HW/SW, códec, resolución, FPS, bitrate, cuadros perdidos y las
+recuperaciones realizadas.
+
 **Se actualiza sola.** Vórtex consulta las publicaciones de este repositorio, elige el APK
 que corresponde a la arquitectura del móvil, lo descarga con progreso y se lo entrega al
 instalador del sistema. Al no estar en ninguna tienda, esta es la vía para no quedarse
@@ -89,6 +98,13 @@ atrás sin depender de que alguien recuerde volver aquí.
 - Gestos: brillo a la izquierda, volumen a la derecha, arrastre horizontal para buscar,
   doble toque lateral para ±10 s, bloqueo de controles.
 - Selección de pistas de audio y subtítulos, velocidad de 0,5× a 3× con corrección de tono.
+- Centro de subtítulos: abre SRT, WebVTT, ASS y SSA desde el selector de Android, ajusta la
+  sincronización principal entre −60 y +60 segundos y permite superponer un segundo SRT/VTT
+  con retardo, tamaño y fondo propios. Los documentos se copian a caché privada sin pedir
+  permisos adicionales de almacenamiento.
+- Búsqueda online opcional en OpenSubtitles por título e idioma. Cada resultado puede cargarse
+  directamente como pista principal o secundaria; la API key configurada por la persona se
+  cifra con Android Keystore y nunca se incluye en el repositorio ni se escribe en logs.
 - Temporizador de apagado.
 - Reproducción en segundo plano con la pantalla apagada.
 - Se abre desde otras apps para cualquier `video/*`, `audio/*`, HLS, RTSP, RTMP y MMS.
@@ -163,6 +179,7 @@ app/src/main/java/com/vortex/player/
 ├── popup/           Ventana flotante (overlay + Compose)
 ├── download/        yt-dlp, cola, destino y publicación en la mediateca
 ├── spotify/         Catálogo, reglas actualizables, paginación y etiquetas
+├── subtitle/        Parser local, caché segura y cliente oficial de OpenSubtitles
 ├── update/          Comprobación, descarga e instalación desde las Releases
 └── ui/              Compose: biblioteca, reproductor, descargas, tema HUD
 ```

@@ -1,10 +1,12 @@
 package com.vortex.player.playback
 
+import android.app.ActivityManager
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -20,10 +22,14 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.VlcEqualizerPlanner
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
+import java.util.Locale
 
 /**
  * libVLC presentado como un [Player] de Media3.
@@ -44,12 +50,14 @@ class VlcPlayer(
     private val libVlc: LibVLC = LibVLC(
         context,
         arrayListOf(
-            "--rtsp-tcp",
-            "--http-reconnect",
-            "--network-caching=1500",
-            "--file-caching=300",
             // Permite cambiar la velocidad sin que las voces suenen a helio.
-            "--audio-time-stretch"
+            "--audio-time-stretch",
+            // Normaliza automáticamente los archivos que incluyen etiquetas ReplayGain.
+            // En medios sin esas etiquetas, la ganancia predeterminada de 0 dB no altera nada.
+            "--audio-replay-gain-mode=track",
+            "--audio-replay-gain-preamp=0.0",
+            "--audio-replay-gain-default=0.0",
+            "--audio-replay-gain-peak-protection"
         )
     )
 
@@ -73,6 +81,25 @@ class VlcPlayer(
     private var pendingError: PlaybackException? = null
     private var repeat: Int = Player.REPEAT_MODE_OFF
     private var shuffle: Boolean = false
+    private val lowRamDevice = (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+        .isLowRamDevice
+    private var activePlan = PlaybackIntelligencePlanner.plan("file://", null, lowRamDevice)
+    private var decoderMode = DecoderMode.HARDWARE
+    private var recoveryCount = 0
+    private var recoveryScheduled = false
+    private var recovering = false
+    private var lastProgressElapsedMs = SystemClock.elapsedRealtime()
+    private var lastDiagnosticsElapsedMs = 0L
+    private var activeMediaKey: String? = null
+    private var requestedAudioTrack: Int? = null
+    private var requestedSubtitleTrack: Int = -1
+    private var subtitleSelectionExplicit = false
+    private var requestedSubtitleDelayMs = 0L
+    private val externalSubtitleUris = linkedSetOf<String>()
+    private var restoreExternalSubtitlesOnPlaying = false
+
+    private val mutableDiagnostics = MutableStateFlow(PlaybackDiagnostics())
+    override val diagnostics: StateFlow<PlaybackDiagnostics> = mutableDiagnostics.asStateFlow()
 
     /**
      * Orden en el que se recorre [playlist], como lista de índices.
@@ -91,15 +118,38 @@ class VlcPlayer(
 
     override val engineName: String = "VLC"
 
+    private val stallWatchdog = object : Runnable {
+        override fun run() {
+            val stalledFor = SystemClock.elapsedRealtime() - lastProgressElapsedMs
+            if (
+                wantsToPlay &&
+                vlcPlaybackState == Player.STATE_READY &&
+                stalledFor >= STALL_TIMEOUT_MS &&
+                !recoveryScheduled
+            ) {
+                scheduleRecovery(
+                    reason = "La reproducción dejó de avanzar"
+                )
+            }
+            handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+        }
+    }
+
     init {
         mediaPlayer.setEventListener { event -> handler.post { onVlcEvent(event) } }
+        handler.postDelayed(stallWatchdog, WATCHDOG_INTERVAL_MS)
     }
 
     // ---------------------------------------------------------------- eventos
 
     private fun onVlcEvent(event: MediaPlayer.Event) {
         when (event.type) {
-            MediaPlayer.Event.Opening -> vlcPlaybackState = Player.STATE_BUFFERING
+            MediaPlayer.Event.Opening -> {
+                recoveryScheduled = false
+                lastProgressElapsedMs = SystemClock.elapsedRealtime()
+                vlcPlaybackState = Player.STATE_BUFFERING
+                updateDiagnostics(health = PlaybackHealth.OPENING)
+            }
 
             MediaPlayer.Event.Buffering -> {
                 bufferedPercent = event.buffering / 100f
@@ -110,26 +160,58 @@ class VlcPlayer(
                 } else {
                     Player.STATE_READY
                 }
+                updateDiagnostics(
+                    health = if (event.buffering < 100f) {
+                        PlaybackHealth.BUFFERING
+                    } else if (recovering) {
+                        PlaybackHealth.RECOVERING
+                    } else {
+                        PlaybackHealth.PLAYING
+                    }
+                )
             }
 
             MediaPlayer.Event.Playing -> {
                 vlcPlaybackState = Player.STATE_READY
                 wantsToPlay = true
+                recovering = false
+                recoveryScheduled = false
+                lastProgressElapsedMs = SystemClock.elapsedRealtime()
                 // Algunos dispositivos crean la salida de audio después de Playing; volver
                 // a mandar aquí el valor evita que el boost se pierda al cambiar de pista.
                 applyVlcVolume()
+                requestedAudioTrack?.let { mediaPlayer.audioTrack = it }
+                if (subtitleSelectionExplicit) mediaPlayer.spuTrack = requestedSubtitleTrack
+                if (requestedSubtitleDelayMs != 0L) {
+                    mediaPlayer.setSpuDelay(requestedSubtitleDelayMs * 1_000L)
+                }
+                if (restoreExternalSubtitlesOnPlaying) {
+                    externalSubtitleUris.forEach { subtitleUri ->
+                        mediaPlayer.addSlave(
+                            org.videolan.libvlc.interfaces.IMedia.Slave.Type.Subtitle,
+                            Uri.parse(subtitleUri),
+                            true
+                        )
+                    }
+                    restoreExternalSubtitlesOnPlaying = false
+                }
                 refreshDuration()
+                publishRuntimeDiagnostics(force = true, health = PlaybackHealth.PLAYING)
             }
 
             MediaPlayer.Event.Paused -> {
                 vlcPlaybackState = Player.STATE_READY
                 wantsToPlay = false
                 lastKnownPositionMs = mediaPlayer.time.coerceAtLeast(0L)
+                updateDiagnostics(health = PlaybackHealth.IDLE)
             }
 
             MediaPlayer.Event.Stopped -> {
-                vlcPlaybackState = Player.STATE_IDLE
-                wantsToPlay = false
+                if (!recovering) {
+                    vlcPlaybackState = Player.STATE_IDLE
+                    wantsToPlay = false
+                    updateDiagnostics(health = PlaybackHealth.IDLE)
+                }
             }
 
             MediaPlayer.Event.EndReached -> {
@@ -144,20 +226,27 @@ class VlcPlayer(
                 } else {
                     vlcPlaybackState = Player.STATE_ENDED
                     wantsToPlay = false
+                    updateDiagnostics(health = PlaybackHealth.IDLE)
                 }
             }
 
             MediaPlayer.Event.EncounteredError -> {
-                pendingError = PlaybackException(
-                    "libVLC no pudo reproducir este medio",
-                    null,
-                    PlaybackException.ERROR_CODE_DECODING_FAILED
+                val recovered = scheduleRecovery(
+                    reason = if (decoderMode == DecoderMode.HARDWARE) {
+                        "El decodificador hardware falló; cambiando a software"
+                    } else {
+                        "VLC perdió el medio; reabriendo en modo seguro"
+                    }
                 )
-                vlcPlaybackState = Player.STATE_IDLE
-                wantsToPlay = false
+                if (!recovered) signalPlaybackFailure()
             }
 
-            MediaPlayer.Event.TimeChanged -> lastKnownPositionMs = event.timeChanged.coerceAtLeast(0L)
+            MediaPlayer.Event.TimeChanged -> {
+                val next = event.timeChanged.coerceAtLeast(0L)
+                if (next != lastKnownPositionMs) lastProgressElapsedMs = SystemClock.elapsedRealtime()
+                lastKnownPositionMs = next
+                publishRuntimeDiagnostics()
+            }
 
             MediaPlayer.Event.LengthChanged -> refreshDuration()
 
@@ -168,6 +257,7 @@ class VlcPlayer(
                 } else {
                     VideoSize.UNKNOWN
                 }
+                publishRuntimeDiagnostics(force = true)
             }
         }
         invalidateState()
@@ -176,6 +266,96 @@ class VlcPlayer(
     private fun refreshDuration() {
         val length = mediaPlayer.length
         durationMs = if (length > 0) length else C.TIME_UNSET
+    }
+
+    /**
+     * Reintento acotado: evita bucles infinitos y conserva el instante y la intención de play.
+     * El primer fallo hardware degrada a software; el segundo limpia y reabre el mismo modo.
+     */
+    private fun scheduleRecovery(reason: String): Boolean {
+        val decision = PlaybackRecoveryPolicy.decide(decoderMode, recoveryCount)
+        if (recoveryScheduled || playlist.isEmpty() || !decision.shouldRetry) {
+            return false
+        }
+        val position = mediaPlayer.time.takeIf { it >= 0L } ?: lastKnownPositionMs
+        val resumePlayback = wantsToPlay
+        decoderMode = decision.decoder
+        recoveryCount++
+        recovering = true
+        recoveryScheduled = true
+        pendingError = null
+        vlcPlaybackState = Player.STATE_BUFFERING
+        updateDiagnostics(PlaybackHealth.RECOVERING, reason)
+        invalidateState()
+
+        handler.post {
+            openCurrent(position.coerceAtLeast(0L), resumePlayback, isRecovery = true)
+            // Si VLC ni siquiera emite Opening, permitimos que el watchdog o el error
+            // definitivo vuelvan a tomar una decisión en vez de quedar bloqueados.
+            handler.postDelayed({ recoveryScheduled = false }, RECOVERY_OPEN_TIMEOUT_MS)
+        }
+        return true
+    }
+
+    private fun signalPlaybackFailure() {
+        recovering = false
+        recoveryScheduled = false
+        pendingError = PlaybackException(
+            "libVLC no pudo reproducir este medio tras $recoveryCount intentos de recuperación",
+            null,
+            PlaybackException.ERROR_CODE_DECODING_FAILED
+        )
+        vlcPlaybackState = Player.STATE_IDLE
+        wantsToPlay = false
+        updateDiagnostics(PlaybackHealth.ERROR, "La recuperación automática no funcionó")
+    }
+
+    private fun updateDiagnostics(health: PlaybackHealth, recovery: String? = null) {
+        mutableDiagnostics.value = mutableDiagnostics.value.copy(
+            source = activePlan.source,
+            decoder = decoderMode,
+            health = health,
+            cacheMs = activePlan.cacheMs,
+            recoveryCount = recoveryCount,
+            lastRecovery = recovery ?: mutableDiagnostics.value.lastRecovery
+        )
+    }
+
+    /** Lee estadísticas nativas con una frecuencia limitada para no cargar Compose ni VLC. */
+    private fun publishRuntimeDiagnostics(
+        force: Boolean = false,
+        health: PlaybackHealth? = null
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastDiagnosticsElapsedMs < DIAGNOSTICS_INTERVAL_MS) return
+        lastDiagnosticsElapsedMs = now
+        val track = runCatching { mediaPlayer.currentVideoTrack }.getOrNull()
+        val stats = runCatching { mediaPlayer.media?.stats }.getOrNull()
+        val fps = track?.let {
+            if (it.frameRateNum > 0 && it.frameRateDen > 0) {
+                it.frameRateNum.toFloat() / it.frameRateDen
+            } else {
+                0f
+            }
+        } ?: 0f
+        val current = mutableDiagnostics.value
+        mutableDiagnostics.value = current.copy(
+            source = activePlan.source,
+            decoder = decoderMode,
+            health = health ?: current.health,
+            cacheMs = activePlan.cacheMs,
+            recoveryCount = recoveryCount,
+            codec = track?.codec?.takeIf(String::isNotBlank)?.uppercase(Locale.ROOT),
+            width = track?.width ?: 0,
+            height = track?.height ?: 0,
+            framesPerSecond = fps,
+            inputBitrateKbps = stats?.inputBitrate
+                ?.let { (it * 8_000f).toInt().coerceAtLeast(0) }
+                ?: 0,
+            decodedFrames = stats?.decodedVideo ?: 0,
+            droppedFrames = stats?.lostPictures ?: 0,
+            corruptedPackets = stats?.demuxCorrupted ?: 0
+        )
     }
 
     // ---------------------------------------------------------- estado Media3
@@ -243,7 +423,7 @@ class VlcPlayer(
     }
 
     override fun handlePrepare(): ListenableFuture<*> {
-        if (mediaPlayer.media == null && playlist.isNotEmpty()) {
+        if ((mediaPlayer.media == null || vlcPlaybackState == Player.STATE_IDLE) && playlist.isNotEmpty()) {
             openCurrent(lastKnownPositionMs, play = wantsToPlay)
         }
         pendingError = null
@@ -253,7 +433,9 @@ class VlcPlayer(
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         wantsToPlay = playWhenReady
         if (playWhenReady) {
-            if (mediaPlayer.media == null) openCurrent(lastKnownPositionMs, play = true)
+            if (mediaPlayer.media == null || vlcPlaybackState == Player.STATE_IDLE) {
+                openCurrent(lastKnownPositionMs, play = true)
+            }
             else mediaPlayer.play()
         } else {
             if (mediaPlayer.isPlaying) mediaPlayer.pause()
@@ -290,10 +472,12 @@ class VlcPlayer(
         mediaPlayer.stop()
         wantsToPlay = false
         vlcPlaybackState = Player.STATE_IDLE
+        updateDiagnostics(health = PlaybackHealth.IDLE)
         return Futures.immediateVoidFuture()
     }
 
     override fun handleRelease(): ListenableFuture<*> {
+        handler.removeCallbacks(stallWatchdog)
         detachVideoOutput()
         mediaPlayer.setEventListener(null)
         mediaPlayer.stop()
@@ -308,7 +492,7 @@ class VlcPlayer(
     fun applyAudioSettings(settings: AudioSettings) {
         audioSettings = settings
         runCatching {
-            if (!settings.enabled) {
+            if (!settings.enabled || settings.bypassOn) {
                 boostVolumePercent = NORMAL_VLC_VOLUME
                 applyVlcVolume()
                 mediaPlayer.setEqualizer(null)
@@ -409,9 +593,37 @@ class VlcPlayer(
      * Abre el medio actual. Para `content://` y `file://` pasamos un descriptor de fichero:
      * libVLC no resuelve los proveedores de contenido de Android por sí solo.
      */
-    private fun openCurrent(startPositionMs: Long, play: Boolean) {
+    private fun openCurrent(startPositionMs: Long, play: Boolean, isRecovery: Boolean = false) {
         val item = playlist.getOrNull(currentIndex) ?: return
         val uri = item.localConfiguration?.uri ?: return
+        val mediaKey = "$currentIndex|$uri"
+        val reopeningSameMedia = mediaKey == activeMediaKey
+        if (!reopeningSameMedia) {
+            activeMediaKey = mediaKey
+            requestedAudioTrack = null
+            requestedSubtitleTrack = -1
+            subtitleSelectionExplicit = false
+            requestedSubtitleDelayMs = 0L
+            externalSubtitleUris.clear()
+            restoreExternalSubtitlesOnPlaying = false
+        }
+        activePlan = PlaybackIntelligencePlanner.plan(
+            uri = uri.toString(),
+            mimeType = item.localConfiguration?.mimeType,
+            lowRamDevice = lowRamDevice
+        )
+        if (!isRecovery) {
+            decoderMode = activePlan.decoder
+            recoveryCount = 0
+            recovering = false
+            recoveryScheduled = false
+            mutableDiagnostics.value = PlaybackDiagnostics(
+                source = activePlan.source,
+                decoder = decoderMode,
+                health = PlaybackHealth.OPENING,
+                cacheMs = activePlan.cacheMs
+            )
+        }
 
         mediaPlayer.media?.release()
         closeFd()
@@ -430,7 +642,8 @@ class VlcPlayer(
             return signalOpenFailure(uri, e)
         }
 
-        media.setHWDecoderEnabled(true, false)
+        media.setHWDecoderEnabled(decoderMode == DecoderMode.HARDWARE, false)
+        activePlan.mediaOptions.forEach(media::addOption)
         if (startPositionMs > 0) {
             // VLC aplica :start-time en segundos con decimales.
             media.addOption(":start-time=${startPositionMs / 1000.0}")
@@ -439,8 +652,11 @@ class VlcPlayer(
 
         mediaPlayer.media = media
         media.release()
+        restoreExternalSubtitlesOnPlaying = reopeningSameMedia && externalSubtitleUris.isNotEmpty()
 
         lastKnownPositionMs = startPositionMs
+        lastProgressElapsedMs = SystemClock.elapsedRealtime()
+        lastDiagnosticsElapsedMs = 0L
         durationMs = C.TIME_UNSET
         pendingError = null
         vlcPlaybackState = Player.STATE_BUFFERING
@@ -453,12 +669,16 @@ class VlcPlayer(
     }
 
     private fun signalOpenFailure(uri: Uri, cause: Throwable? = null) {
+        recovering = false
+        recoveryScheduled = false
         pendingError = PlaybackException(
             "No se pudo abrir $uri",
             cause,
             PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
         )
         vlcPlaybackState = Player.STATE_IDLE
+        wantsToPlay = false
+        updateDiagnostics(PlaybackHealth.ERROR, "No se pudo abrir la fuente")
         invalidateState()
     }
 
@@ -468,6 +688,18 @@ class VlcPlayer(
     }
 
     // ------------------------------------------------------- EngineControls
+
+    override fun retryInSafeMode() {
+        if (playlist.isEmpty()) return
+        decoderMode = DecoderMode.SOFTWARE
+        recoveryCount = 0
+        recovering = true
+        recoveryScheduled = false
+        wantsToPlay = true
+        pendingError = null
+        updateDiagnostics(PlaybackHealth.RECOVERING, "Reintento manual en modo software")
+        openCurrent(lastKnownPositionMs, play = true, isRecovery = true)
+    }
 
     override val audioTracks: List<TrackOption>
         get() = mediaPlayer.audioTracks.orEmpty().map { track ->
@@ -491,11 +723,27 @@ class VlcPlayer(
             }
 
     override fun selectAudioTrack(id: String) {
-        id.toIntOrNull()?.let { mediaPlayer.audioTrack = it }
+        id.toIntOrNull()?.let {
+            requestedAudioTrack = it
+            mediaPlayer.audioTrack = it
+        }
     }
 
     override fun selectSubtitleTrack(id: String?) {
-        mediaPlayer.spuTrack = id?.toIntOrNull() ?: -1
+        requestedSubtitleTrack = id?.toIntOrNull() ?: -1
+        subtitleSelectionExplicit = true
+        mediaPlayer.spuTrack = requestedSubtitleTrack
+    }
+
+    override val subtitleDelayMs: Long
+        get() = requestedSubtitleDelayMs
+
+    override fun setSubtitleDelayMs(delayMs: Long) {
+        val bounded = delayMs.coerceIn(-60_000L, 60_000L)
+        requestedSubtitleDelayMs = bounded
+        if (!mediaPlayer.setSpuDelay(bounded * 1_000L)) {
+            Log.w(TAG, "VLC rechazó el retardo de subtítulos $bounded ms")
+        }
     }
 
     override val isVideoEnabled: Boolean get() = videoEnabled
@@ -532,13 +780,27 @@ class VlcPlayer(
     }
 
     override fun addExternalSubtitle(uri: String) {
-        mediaPlayer.addSlave(org.videolan.libvlc.interfaces.IMedia.Slave.Type.Subtitle, Uri.parse(uri), true)
+        val added = mediaPlayer.addSlave(
+            org.videolan.libvlc.interfaces.IMedia.Slave.Type.Subtitle,
+            Uri.parse(uri),
+            true
+        )
+        if (added) {
+            externalSubtitleUris += uri
+            subtitleSelectionExplicit = false
+        } else {
+            Log.w(TAG, "VLC rechazó el subtítulo externo $uri")
+        }
     }
 
     private companion object {
         const val TAG = "VlcPlayer"
         const val NORMAL_VLC_VOLUME = 100
         const val MAX_VLC_VOLUME = 200
+        const val WATCHDOG_INTERVAL_MS = 4_000L
+        const val STALL_TIMEOUT_MS = 16_000L
+        const val RECOVERY_OPEN_TIMEOUT_MS = 3_000L
+        const val DIAGNOSTICS_INTERVAL_MS = 1_000L
 
         val AVAILABLE_COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(

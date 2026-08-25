@@ -1,0 +1,95 @@
+package com.vortex.player.playback
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PlaybackIntelligenceTest {
+
+    @Test
+    fun `local files use a short file cache and hardware first`() {
+        val plan = PlaybackIntelligencePlanner.plan(
+            uri = "content://media/external/video/media/42",
+            mimeType = "video/mp4",
+            lowRamDevice = false
+        )
+
+        assertEquals(PlaybackSourceKind.LOCAL, plan.source)
+        assertEquals(DecoderMode.HARDWARE, plan.decoder)
+        assertEquals(350, plan.cacheMs)
+        assertEquals(listOf(":file-caching=350"), plan.mediaOptions)
+    }
+
+    @Test
+    fun `progressive http gets reconnect and medium network cache`() {
+        val plan = PlaybackIntelligencePlanner.plan(
+            uri = "https://cdn.example.org/movie.mp4",
+            mimeType = "video/mp4",
+            lowRamDevice = false
+        )
+
+        assertEquals(PlaybackSourceKind.HTTP, plan.source)
+        assertEquals(2_500, plan.cacheMs)
+        assertTrue(plan.mediaOptions.contains(":network-caching=2500"))
+        assertTrue(plan.mediaOptions.contains(":http-reconnect"))
+    }
+
+    @Test
+    fun `hls is detected by extension or mime and receives the largest cache`() {
+        val byExtension = PlaybackIntelligencePlanner.plan(
+            "https://example.org/live/channel.m3u8?token=x",
+            null,
+            false
+        )
+        val byMime = PlaybackIntelligencePlanner.plan(
+            "https://example.org/manifest",
+            "application/x-mpegURL",
+            false
+        )
+
+        assertEquals(PlaybackSourceKind.HLS, byExtension.source)
+        assertEquals(PlaybackSourceKind.HLS, byMime.source)
+        assertEquals(4_000, byMime.cacheMs)
+        assertTrue(byMime.mediaOptions.contains(":live-caching=4000"))
+    }
+
+    @Test
+    fun `rtsp forces tcp and low ram profile reduces memory pressure`() {
+        val regular = PlaybackIntelligencePlanner.plan("rtsp://camera.local/live", null, false)
+        val lowRam = PlaybackIntelligencePlanner.plan("rtsp://camera.local/live", null, true)
+
+        assertEquals(PlaybackSourceKind.RTSP, regular.source)
+        assertEquals(1_800, regular.cacheMs)
+        assertEquals(1_200, lowRam.cacheMs)
+        assertTrue(lowRam.mediaOptions.contains(":rtsp-tcp"))
+    }
+
+    @Test
+    fun `first recovery leaves hardware and second keeps safe software`() {
+        val first = PlaybackRecoveryPolicy.decide(DecoderMode.HARDWARE, 0)
+        val second = PlaybackRecoveryPolicy.decide(first.decoder, 1)
+
+        assertTrue(first.shouldRetry)
+        assertEquals(DecoderMode.SOFTWARE, first.decoder)
+        assertTrue(second.shouldRetry)
+        assertEquals(DecoderMode.SOFTWARE, second.decoder)
+    }
+
+    @Test
+    fun `recovery policy stops after two attempts`() {
+        val exhausted = PlaybackRecoveryPolicy.decide(
+            DecoderMode.SOFTWARE,
+            PlaybackRecoveryPolicy.MAX_AUTOMATIC_RECOVERIES
+        )
+
+        assertFalse(exhausted.shouldRetry)
+        assertEquals(DecoderMode.SOFTWARE, exhausted.decoder)
+    }
+
+    @Test
+    fun `diagnostics formats unavailable and known resolution`() {
+        assertEquals("—", PlaybackDiagnostics().resolutionLabel)
+        assertEquals("3840 × 2160", PlaybackDiagnostics(width = 3840, height = 2160).resolutionLabel)
+    }
+}

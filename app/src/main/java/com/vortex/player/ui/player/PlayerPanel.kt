@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,12 +30,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.playback.PlaybackDiagnostics
+import com.vortex.player.playback.PlaybackHealth
 import com.vortex.player.playback.TrackOption
+import com.vortex.player.subtitle.OnlineSubtitleResult
+import com.vortex.player.subtitle.OnlineSubtitleTarget
+import com.vortex.player.subtitle.OnlineSubtitleUiState
+import com.vortex.player.subtitle.SubtitleTextSize
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
+import java.util.Locale
 
 /**
  * Panel inferior de opciones. Es una superficie propia y no un `ModalBottomSheet` porque
@@ -47,6 +59,30 @@ fun PlayerPanel(
     onSleep: (Int?) -> Unit,
     onSelectAudio: (String) -> Unit,
     onSelectSubtitle: (String?) -> Unit,
+    primarySubtitleName: String?,
+    subtitleDelayMs: Long,
+    secondarySubtitleName: String?,
+    secondaryDelayMs: Long,
+    secondaryTextSize: SubtitleTextSize,
+    secondaryBackground: Boolean,
+    subtitleStatus: String?,
+    onlineSubtitleState: OnlineSubtitleUiState,
+    onLoadPrimarySubtitle: () -> Unit,
+    onLoadSecondarySubtitle: () -> Unit,
+    onRemoveSecondarySubtitle: () -> Unit,
+    onAdjustSubtitleDelay: (Long) -> Unit,
+    onAdjustSecondaryDelay: (Long) -> Unit,
+    onCycleSecondaryTextSize: () -> Unit,
+    onToggleSecondaryBackground: () -> Unit,
+    onOnlineApiKeyChange: (String) -> Unit,
+    onSaveOnlineApiKey: () -> Unit,
+    onClearOnlineApiKey: () -> Unit,
+    onOnlineQueryChange: (String) -> Unit,
+    onCycleOnlineLanguage: () -> Unit,
+    onSearchOnlineSubtitles: () -> Unit,
+    onDownloadOnlineSubtitle: (OnlineSubtitleResult, OnlineSubtitleTarget) -> Unit,
+    diagnostics: PlaybackDiagnostics,
+    onRetrySafeMode: () -> Unit,
     currentPreset: AspectPreset,
     onSelectAspect: (AspectPreset) -> Unit
 ) {
@@ -70,7 +106,13 @@ fun PlayerPanel(
                 .background(VortexPalette.GraphiteRaised, VortexShapes.large)
                 .border(0.5.dp, VortexPalette.Outline, VortexShapes.large)
                 .padding(16.dp)
-                .heightIn(max = 380.dp)
+                .heightIn(
+                    max = when (panel) {
+                        Panel.SUBTITLES -> 620.dp
+                        Panel.DIAGNOSTICS -> 520.dp
+                        else -> 380.dp
+                    }
+                )
         ) {
             Text(
                 text = when (panel) {
@@ -79,6 +121,7 @@ fun PlayerPanel(
                     Panel.AUDIO -> "PISTA DE AUDIO"
                     Panel.SUBTITLES -> "SUBTÍTULOS"
                     Panel.ASPECT -> "RELACIÓN DE ASPECTO"
+                    Panel.DIAGNOSTICS -> "MOTOR INTELIGENTE"
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = VortexPalette.TextLow,
@@ -93,13 +136,438 @@ fun PlayerPanel(
                     allowNone = false,
                     onSelect = { it?.let(onSelectAudio) }
                 )
-                Panel.SUBTITLES -> TrackOptions(
+                Panel.SUBTITLES -> SubtitleCenter(
                     tracks = controls?.subtitleTracks.orEmpty(),
-                    allowNone = true,
-                    onSelect = onSelectSubtitle
+                    primaryName = primarySubtitleName,
+                    primaryDelayMs = subtitleDelayMs,
+                    secondaryName = secondarySubtitleName,
+                    secondaryDelayMs = secondaryDelayMs,
+                    secondaryTextSize = secondaryTextSize,
+                    secondaryBackground = secondaryBackground,
+                    status = subtitleStatus,
+                    onlineState = onlineSubtitleState,
+                    onSelect = onSelectSubtitle,
+                    onLoadPrimary = onLoadPrimarySubtitle,
+                    onLoadSecondary = onLoadSecondarySubtitle,
+                    onRemoveSecondary = onRemoveSecondarySubtitle,
+                    onAdjustPrimaryDelay = onAdjustSubtitleDelay,
+                    onAdjustSecondaryDelay = onAdjustSecondaryDelay,
+                    onCycleSecondaryTextSize = onCycleSecondaryTextSize,
+                    onToggleSecondaryBackground = onToggleSecondaryBackground,
+                    onOnlineApiKeyChange = onOnlineApiKeyChange,
+                    onSaveOnlineApiKey = onSaveOnlineApiKey,
+                    onClearOnlineApiKey = onClearOnlineApiKey,
+                    onOnlineQueryChange = onOnlineQueryChange,
+                    onCycleOnlineLanguage = onCycleOnlineLanguage,
+                    onSearchOnline = onSearchOnlineSubtitles,
+                    onDownloadOnline = onDownloadOnlineSubtitle
                 )
                 Panel.ASPECT -> AspectOptions(currentPreset, onSelectAspect)
+                Panel.DIAGNOSTICS -> DiagnosticsPanel(diagnostics, onRetrySafeMode)
             }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsPanel(
+    diagnostics: PlaybackDiagnostics,
+    onRetrySafeMode: () -> Unit
+) {
+    val healthTint = when (diagnostics.health) {
+        PlaybackHealth.PLAYING -> VortexPalette.Neon
+        PlaybackHealth.RECOVERING, PlaybackHealth.BUFFERING -> VortexPalette.Amber
+        PlaybackHealth.ERROR -> VortexPalette.Magenta
+        else -> VortexPalette.Cyan
+    }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Text(
+                text = diagnostics.health.label,
+                style = MaterialTheme.typography.headlineSmall,
+                color = healthTint
+            )
+            Text(
+                text = "VLC analiza la fuente, ajusta el búfer y cambia a software si el hardware falla.",
+                style = MaterialTheme.typography.bodySmall,
+                color = VortexPalette.TextLow,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        item { DiagnosticRow("FUENTE", diagnostics.source.label) }
+        item { DiagnosticRow("DECODIFICADOR", diagnostics.decoder.label) }
+        item { DiagnosticRow("BÚFER OBJETIVO", "${diagnostics.cacheMs} ms") }
+        item { DiagnosticRow("CÓDEC", diagnostics.codec ?: "—") }
+        item { DiagnosticRow("RESOLUCIÓN", diagnostics.resolutionLabel) }
+        item {
+            DiagnosticRow(
+                "FPS",
+                diagnostics.framesPerSecond.takeIf { it > 0f }
+                    ?.let { String.format(Locale.ROOT, "%.2f", it) }
+                    ?: "—"
+            )
+        }
+        item {
+            DiagnosticRow(
+                "ENTRADA",
+                diagnostics.inputBitrateKbps.takeIf { it > 0 }?.let { "$it kb/s" } ?: "—"
+            )
+        }
+        item {
+            DiagnosticRow(
+                "CUADROS",
+                "${diagnostics.decodedFrames} decodificados · ${diagnostics.droppedFrames} perdidos"
+            )
+        }
+        item { DiagnosticRow("PAQUETES DAÑADOS", diagnostics.corruptedPackets.toString()) }
+        item { DiagnosticRow("RECUPERACIONES", diagnostics.recoveryCount.toString()) }
+        diagnostics.lastRecovery?.let { recovery ->
+            item {
+                Text(
+                    text = recovery,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (diagnostics.health == PlaybackHealth.ERROR) {
+                        VortexPalette.Magenta
+                    } else {
+                        VortexPalette.Amber
+                    }
+                )
+            }
+        }
+        item {
+            OptionChip("REINTENTAR EN MODO SEGURO", tint = VortexPalette.Cyan, onClick = onRetrySafeMode)
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium,
+            color = VortexPalette.TextHigh,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SubtitleCenter(
+    tracks: List<TrackOption>,
+    primaryName: String?,
+    primaryDelayMs: Long,
+    secondaryName: String?,
+    secondaryDelayMs: Long,
+    secondaryTextSize: SubtitleTextSize,
+    secondaryBackground: Boolean,
+    status: String?,
+    onlineState: OnlineSubtitleUiState,
+    onSelect: (String?) -> Unit,
+    onLoadPrimary: () -> Unit,
+    onLoadSecondary: () -> Unit,
+    onRemoveSecondary: () -> Unit,
+    onAdjustPrimaryDelay: (Long) -> Unit,
+    onAdjustSecondaryDelay: (Long) -> Unit,
+    onCycleSecondaryTextSize: () -> Unit,
+    onToggleSecondaryBackground: () -> Unit,
+    onOnlineApiKeyChange: (String) -> Unit,
+    onSaveOnlineApiKey: () -> Unit,
+    onClearOnlineApiKey: () -> Unit,
+    onOnlineQueryChange: (String) -> Unit,
+    onCycleOnlineLanguage: () -> Unit,
+    onSearchOnline: () -> Unit,
+    onDownloadOnline: (OnlineSubtitleResult, OnlineSubtitleTarget) -> Unit
+) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            SubtitleSectionLabel("PISTA PRINCIPAL")
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OptionChip("ABRIR ARCHIVO", tint = VortexPalette.Cyan, onClick = onLoadPrimary)
+                OptionChip("DESACTIVAR", tint = VortexPalette.Magenta) { onSelect(null) }
+            }
+            Text(
+                text = primaryName ?: "Usa una pista incluida o abre SRT, VTT, ASS o SSA.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (primaryName == null) VortexPalette.TextLow else VortexPalette.Neon,
+                modifier = Modifier.padding(top = 5.dp)
+            )
+        }
+
+        if (tracks.isNotEmpty()) {
+            items(tracks, key = { "primary-${it.id}" }) { track ->
+                TrackRow(
+                    label = track.label,
+                    selected = track.selected,
+                    onClick = { onSelect(track.id) }
+                )
+            }
+        }
+
+        item {
+            DelayControl(
+                label = "SINCRONIZACIÓN PRINCIPAL",
+                valueMs = primaryDelayMs,
+                onDelta = onAdjustPrimaryDelay
+            )
+        }
+
+        item {
+            SubtitleSectionLabel("SEGUNDO SUBTÍTULO")
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OptionChip("ABRIR SRT / VTT", tint = VortexPalette.Cyan, onClick = onLoadSecondary)
+                if (secondaryName != null) {
+                    OptionChip("QUITAR", tint = VortexPalette.Magenta, onClick = onRemoveSecondary)
+                }
+            }
+            Text(
+                text = secondaryName ?: "Superpone otro idioma sin reemplazar la pista principal.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (secondaryName == null) VortexPalette.TextLow else VortexPalette.Neon,
+                modifier = Modifier.padding(top = 5.dp)
+            )
+        }
+
+        if (secondaryName != null) {
+            item {
+                DelayControl(
+                    label = "SINCRONIZACIÓN SECUNDARIA",
+                    valueMs = secondaryDelayMs,
+                    onDelta = onAdjustSecondaryDelay
+                )
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OptionChip("TAMAÑO · ${secondaryTextSize.label}", onClick = onCycleSecondaryTextSize)
+                    OptionChip(
+                        if (secondaryBackground) "FONDO · SÍ" else "FONDO · NO",
+                        tint = if (secondaryBackground) VortexPalette.Neon else VortexPalette.TextHigh,
+                        onClick = onToggleSecondaryBackground
+                    )
+                }
+            }
+        }
+
+        item {
+            SubtitleSectionLabel("ONLINE · OPENSUBTITLES")
+            if (!onlineState.configured) {
+                Text(
+                    text = "Añade la API key gratuita de tu aplicación. Se cifra en este dispositivo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                SubtitleInput(
+                    value = onlineState.apiKeyDraft,
+                    placeholder = "API KEY",
+                    secret = true,
+                    onValueChange = onOnlineApiKeyChange
+                )
+                Row(Modifier.padding(top = 7.dp)) {
+                    OptionChip("GUARDAR KEY", tint = VortexPalette.Cyan, onClick = onSaveOnlineApiKey)
+                }
+            } else {
+                SubtitleInput(
+                    value = onlineState.query,
+                    placeholder = "PELÍCULA, SERIE O EPISODIO",
+                    onValueChange = onOnlineQueryChange
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 7.dp)
+                        .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    OptionChip(
+                        "IDIOMA · ${onlineState.language.label}",
+                        tint = VortexPalette.Neon,
+                        onClick = onCycleOnlineLanguage
+                    )
+                    OptionChip(
+                        if (onlineState.searching) "BUSCANDO…" else "BUSCAR",
+                        tint = VortexPalette.Cyan,
+                        onClick = { if (!onlineState.searching) onSearchOnline() }
+                    )
+                    OptionChip("CAMBIAR KEY", tint = VortexPalette.TextLow, onClick = onClearOnlineApiKey)
+                }
+            }
+        }
+
+        if (onlineState.configured && onlineState.results.isEmpty() && !onlineState.searching) {
+            item {
+                Text(
+                    text = "Busca y carga el resultado directamente como pista principal o segundo subtítulo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VortexPalette.TextLow
+                )
+            }
+        }
+
+        items(onlineState.results, key = { "online-${it.fileId}" }) { result ->
+            OnlineSubtitleRow(
+                result = result,
+                downloading = onlineState.downloadingFileId == result.fileId,
+                onPrimary = { onDownloadOnline(result, OnlineSubtitleTarget.PRIMARY) },
+                onSecondary = { onDownloadOnline(result, OnlineSubtitleTarget.SECONDARY) }
+            )
+        }
+
+        status?.let { message ->
+            item {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (message.startsWith("ERROR")) {
+                        VortexPalette.Magenta
+                    } else {
+                        VortexPalette.Cyan
+                    },
+                    modifier = Modifier.padding(top = 5.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleInput(
+    value: String,
+    placeholder: String,
+    secret: Boolean = false,
+    onValueChange: (String) -> Unit
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        textStyle = TextStyle(
+            color = VortexPalette.TextHigh,
+            fontSize = MaterialTheme.typography.bodyMedium.fontSize
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(VortexPalette.GraphiteHigh, VortexShapes.small)
+            .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        decorationBox = { field ->
+            Box {
+                if (value.isBlank()) {
+                    Text(
+                        text = placeholder,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = VortexPalette.TextLow
+                    )
+                }
+                field()
+            }
+        }
+    )
+}
+
+@Composable
+private fun OnlineSubtitleRow(
+    result: OnlineSubtitleResult,
+    downloading: Boolean,
+    onPrimary: () -> Unit,
+    onSecondary: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(VortexPalette.GraphiteHigh, VortexShapes.small)
+            .border(0.5.dp, VortexPalette.Outline, VortexShapes.small)
+            .padding(10.dp)
+    ) {
+        Text(
+            text = result.release,
+            style = MaterialTheme.typography.bodyMedium,
+            color = VortexPalette.TextHigh,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        val flags = buildList {
+            add(result.language.uppercase(Locale.ROOT))
+            add("${result.downloadCount} DESCARGAS")
+            if (result.hearingImpaired) add("CC")
+            if (result.machineTranslated) add("TRADUCCIÓN AUTOMÁTICA")
+        }.joinToString(" · ")
+        Text(
+            text = flags,
+            style = MaterialTheme.typography.labelSmall,
+            color = VortexPalette.TextLow,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 3.dp)
+        )
+        Row(
+            modifier = Modifier
+                .padding(top = 7.dp)
+                .horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            if (downloading) {
+                OptionChip("DESCARGANDO…", tint = VortexPalette.Cyan) {}
+            } else {
+                OptionChip("PRINCIPAL", tint = VortexPalette.Neon, onClick = onPrimary)
+                OptionChip("SEGUNDO", tint = VortexPalette.Cyan, onClick = onSecondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = VortexPalette.TextLow,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+    )
+}
+
+@Composable
+private fun DelayControl(label: String, valueMs: Long, onDelta: (Long) -> Unit) {
+    Column(Modifier.padding(vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextLow,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = String.format(Locale.getDefault(), "%+.1f s", valueMs / 1_000f),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (valueMs == 0L) VortexPalette.TextMid else VortexPalette.Neon
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            OptionChip("−1 s") { onDelta(-1_000L) }
+            OptionChip("−0,1 s") { onDelta(-100L) }
+            OptionChip("CERO", tint = VortexPalette.Cyan) { onDelta(-valueMs) }
+            OptionChip("+0,1 s") { onDelta(100L) }
+            OptionChip("+1 s") { onDelta(1_000L) }
         }
     }
 }

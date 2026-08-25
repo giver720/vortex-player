@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.media.AudioManager
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,30 +48,48 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
+import com.vortex.player.BuildConfig
 import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.playback.PlaybackDiagnostics
 import com.vortex.player.playback.PlaybackService
+import com.vortex.player.subtitle.OnlineSubtitleResult
+import com.vortex.player.subtitle.OnlineSubtitleTarget
+import com.vortex.player.subtitle.OnlineSubtitleUiState
+import com.vortex.player.subtitle.OpenSubtitlesClient
+import com.vortex.player.subtitle.OpenSubtitlesKeyStore
+import com.vortex.player.subtitle.SubtitleDocument
+import com.vortex.player.subtitle.SubtitleDocumentLoader
+import com.vortex.player.subtitle.SubtitleLanguageChoice
+import com.vortex.player.subtitle.SubtitleTextSize
+import com.vortex.player.subtitle.SubtitleTimeline
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.common.rememberPlayerUiState
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
@@ -105,6 +125,8 @@ fun PlayerScreen(
 
     val player by PlaybackHub.player.collectAsStateWithLifecycle()
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
+    val emptyDiagnostics = remember { MutableStateFlow(PlaybackDiagnostics()) }
+    val diagnostics by (controls?.diagnostics ?: emptyDiagnostics).collectAsStateWithLifecycle()
     val entry by PlaybackHub.currentEntry.collectAsStateWithLifecycle()
     val audioOnly by PlaybackHub.audioOnly.collectAsStateWithLifecycle()
     val repeat by PlaybackHub.repeat.collectAsStateWithLifecycle()
@@ -118,6 +140,65 @@ fun PlayerScreen(
     var feedback by remember { mutableStateOf<Feedback?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf<Panel?>(null) }
+    val subtitleScope = rememberCoroutineScope()
+    var primarySubtitleName by remember(entry?.id) { mutableStateOf<String?>(null) }
+    var secondarySubtitle by remember(entry?.id) { mutableStateOf<SubtitleDocument?>(null) }
+    var subtitleDelayMs by remember(entry?.id) { mutableLongStateOf(0L) }
+    var secondaryDelayMs by remember(entry?.id) { mutableLongStateOf(0L) }
+    var secondaryTextSize by remember(entry?.id) { mutableStateOf(SubtitleTextSize.MEDIUM) }
+    var secondaryBackground by remember(entry?.id) { mutableStateOf(true) }
+    var subtitleStatus by remember(entry?.id) { mutableStateOf<String?>(null) }
+    val openSubtitlesClient = remember { OpenSubtitlesClient(BuildConfig.VERSION_NAME) }
+    var onlineConfigured by remember { mutableStateOf(OpenSubtitlesKeyStore.read(context) != null) }
+    var onlineApiKeyDraft by remember { mutableStateOf("") }
+    var onlineQuery by remember(entry?.id) { mutableStateOf(entry?.title.orEmpty()) }
+    var onlineLanguage by remember { mutableStateOf(SubtitleLanguageChoice.SPANISH) }
+    var onlineSearching by remember { mutableStateOf(false) }
+    var onlineDownloadingId by remember { mutableStateOf<Long?>(null) }
+    var onlineResults by remember(entry?.id) { mutableStateOf(emptyList<OnlineSubtitleResult>()) }
+
+    val primarySubtitleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        subtitleScope.launch {
+            subtitleStatus = "CARGANDO SUBTÍTULO…"
+            runCatching { SubtitleDocumentLoader.load(context, uri) }
+                .onSuccess { document ->
+                    controls?.addExternalSubtitle(document.localUri.toString())
+                    primarySubtitleName = document.displayName
+                    subtitleStatus = "PISTA PRINCIPAL CARGADA"
+                }
+                .onFailure { error ->
+                    subtitleStatus = "ERROR · ${error.message ?: "No se pudo abrir el archivo"}"
+                }
+        }
+    }
+    val secondarySubtitleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        subtitleScope.launch {
+            subtitleStatus = "CARGANDO SEGUNDO SUBTÍTULO…"
+            runCatching {
+                SubtitleDocumentLoader.load(context, uri).also {
+                    require(it.cues.isNotEmpty()) {
+                        "El segundo subtítulo debe ser un SRT o WebVTT válido"
+                    }
+                }
+            }.onSuccess { document ->
+                secondarySubtitle = document
+                secondaryDelayMs = 0L
+                subtitleStatus = "SEGUNDO SUBTÍTULO CARGADO"
+            }.onFailure { error ->
+                subtitleStatus = "ERROR · ${error.message ?: "No se pudo leer el archivo"}"
+            }
+        }
+    }
+
+    LaunchedEffect(entry?.id, controls) {
+        subtitleDelayMs = controls?.subtitleDelayMs ?: 0L
+    }
 
     // Los controles se esconden solos, pero nunca mientras hay un panel abierto.
     LaunchedEffect(controlsVisible, uiState.isPlaying, panel) {
@@ -143,6 +224,15 @@ fun PlayerScreen(
             videoAspect = uiState.aspectRatio,
             modifier = Modifier.fillMaxSize()
         )
+
+        secondarySubtitle?.let { document ->
+            SecondarySubtitleOverlay(
+                document = document,
+                positionMs = uiState.positionMs - secondaryDelayMs,
+                textSize = secondaryTextSize,
+                background = secondaryBackground
+            )
+        }
 
         if (audioOnly) {
             AudioOnlyBackdrop(
@@ -217,7 +307,8 @@ fun PlayerScreen(
             ) {
                 ControlsOverlay(
                     title = entry?.title.orEmpty(),
-                    engineName = controls?.engineName ?: "—",
+                    engineName = (controls?.engineName ?: "—") +
+                        if (controls != null) " · ${diagnostics.decoder.shortLabel}" else "",
                     positionMs = uiState.positionMs,
                     durationMs = uiState.durationMs,
                     bufferedProgress = uiState.bufferedProgress,
@@ -269,7 +360,141 @@ fun PlayerScreen(
                 },
                 onSelectSubtitle = { id ->
                     controls?.selectSubtitleTrack(id)
-                    panel = null
+                    primarySubtitleName = null
+                    subtitleStatus = if (id == null) {
+                        "SUBTÍTULOS PRINCIPALES DESACTIVADOS"
+                    } else {
+                        "PISTA PRINCIPAL SELECCIONADA"
+                    }
+                },
+                primarySubtitleName = primarySubtitleName,
+                subtitleDelayMs = subtitleDelayMs,
+                secondarySubtitleName = secondarySubtitle?.displayName,
+                secondaryDelayMs = secondaryDelayMs,
+                secondaryTextSize = secondaryTextSize,
+                secondaryBackground = secondaryBackground,
+                subtitleStatus = subtitleStatus,
+                onlineSubtitleState = OnlineSubtitleUiState(
+                    configured = onlineConfigured,
+                    apiKeyDraft = onlineApiKeyDraft,
+                    query = onlineQuery,
+                    language = onlineLanguage,
+                    searching = onlineSearching,
+                    downloadingFileId = onlineDownloadingId,
+                    results = onlineResults
+                ),
+                onLoadPrimarySubtitle = { primarySubtitleLauncher.launch(SUBTITLE_MIME_TYPES) },
+                onLoadSecondarySubtitle = { secondarySubtitleLauncher.launch(SUBTITLE_MIME_TYPES) },
+                onRemoveSecondarySubtitle = {
+                    secondarySubtitle = null
+                    subtitleStatus = "SEGUNDO SUBTÍTULO QUITADO"
+                },
+                onAdjustSubtitleDelay = { delta ->
+                    val next = (subtitleDelayMs + delta).coerceIn(-60_000L, 60_000L)
+                    controls?.setSubtitleDelayMs(next)
+                    subtitleDelayMs = controls?.subtitleDelayMs ?: next
+                },
+                onAdjustSecondaryDelay = { delta ->
+                    secondaryDelayMs = (secondaryDelayMs + delta).coerceIn(-60_000L, 60_000L)
+                },
+                onCycleSecondaryTextSize = {
+                    val values = SubtitleTextSize.entries
+                    secondaryTextSize = values[(secondaryTextSize.ordinal + 1) % values.size]
+                },
+                onToggleSecondaryBackground = {
+                    secondaryBackground = !secondaryBackground
+                },
+                onOnlineApiKeyChange = { onlineApiKeyDraft = it.take(256) },
+                onSaveOnlineApiKey = {
+                    runCatching { OpenSubtitlesKeyStore.write(context, onlineApiKeyDraft) }
+                        .onSuccess {
+                            onlineConfigured = true
+                            onlineApiKeyDraft = ""
+                            subtitleStatus = "API KEY DE OPENSUBTITLES GUARDADA Y CIFRADA"
+                        }
+                        .onFailure { error ->
+                            subtitleStatus = "ERROR · ${error.message ?: "No se pudo guardar la API key"}"
+                        }
+                },
+                onClearOnlineApiKey = {
+                    OpenSubtitlesKeyStore.clear(context)
+                    onlineConfigured = false
+                    onlineResults = emptyList()
+                    onlineApiKeyDraft = ""
+                    subtitleStatus = "API KEY DE OPENSUBTITLES ELIMINADA"
+                },
+                onOnlineQueryChange = { onlineQuery = it.take(160) },
+                onCycleOnlineLanguage = {
+                    val values = SubtitleLanguageChoice.entries
+                    onlineLanguage = values[(onlineLanguage.ordinal + 1) % values.size]
+                },
+                onSearchOnlineSubtitles = {
+                    subtitleScope.launch {
+                        onlineSearching = true
+                        subtitleStatus = "BUSCANDO EN OPENSUBTITLES…"
+                        runCatching {
+                            val key = OpenSubtitlesKeyStore.read(context)
+                                ?: error("Configura primero tu API key de OpenSubtitles")
+                            openSubtitlesClient.search(key, onlineQuery, onlineLanguage)
+                        }.onSuccess { results ->
+                            onlineResults = results
+                            subtitleStatus = if (results.isEmpty()) {
+                                "SIN RESULTADOS · PRUEBA OTRO TÍTULO O IDIOMA"
+                            } else {
+                                "${results.size} RESULTADOS EN OPENSUBTITLES"
+                            }
+                        }.onFailure { error ->
+                            onlineResults = emptyList()
+                            subtitleStatus = "ERROR · ${error.message ?: "Falló la búsqueda online"}"
+                        }
+                        onlineSearching = false
+                    }
+                },
+                onDownloadOnlineSubtitle = { result, target ->
+                    if (onlineDownloadingId == null) {
+                        subtitleScope.launch {
+                            onlineDownloadingId = result.fileId
+                            subtitleStatus = "DESCARGANDO ${result.language.uppercase()}…"
+                            runCatching {
+                                val key = OpenSubtitlesKeyStore.read(context)
+                                    ?: error("Configura primero tu API key de OpenSubtitles")
+                                val download = openSubtitlesClient.download(key, result.fileId)
+                                val document = SubtitleDocumentLoader.fromBytes(
+                                    context = context,
+                                    displayName = download.fileName,
+                                    bytes = download.bytes
+                                )
+                                if (target == OnlineSubtitleTarget.SECONDARY) {
+                                    require(document.cues.isNotEmpty()) {
+                                        "El segundo subtítulo descargado no es SRT/WebVTT válido"
+                                    }
+                                }
+                                Triple(document, download.remaining, target)
+                            }.onSuccess { (document, remaining, destination) ->
+                                if (destination == OnlineSubtitleTarget.PRIMARY) {
+                                    controls?.addExternalSubtitle(document.localUri.toString())
+                                    primarySubtitleName = document.displayName
+                                } else {
+                                    secondarySubtitle = document
+                                    secondaryDelayMs = 0L
+                                }
+                                val quota = remaining?.let { " · $it DESCARGAS RESTANTES" }.orEmpty()
+                                subtitleStatus = if (destination == OnlineSubtitleTarget.PRIMARY) {
+                                    "SUBTÍTULO ONLINE CARGADO COMO PRINCIPAL$quota"
+                                } else {
+                                    "SUBTÍTULO ONLINE CARGADO COMO SEGUNDO$quota"
+                                }
+                            }.onFailure { error ->
+                                subtitleStatus = "ERROR · ${error.message ?: "Falló la descarga del subtítulo"}"
+                            }
+                            onlineDownloadingId = null
+                        }
+                    }
+                },
+                diagnostics = diagnostics,
+                onRetrySafeMode = {
+                    controls?.retryInSafeMode()
+                    subtitleStatus = null
                 },
                 currentPreset = preset,
                 onSelectAspect = { chosen ->
@@ -284,6 +509,45 @@ fun PlayerScreen(
         }
     }
 }
+
+@Composable
+private fun SecondarySubtitleOverlay(
+    document: SubtitleDocument,
+    positionMs: Long,
+    textSize: SubtitleTextSize,
+    background: Boolean
+) {
+    val active = SubtitleTimeline.activeText(document.cues, positionMs) ?: return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 104.dp),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Text(
+            text = active,
+            color = Color.White,
+            fontSize = (22f * textSize.scale).sp,
+            style = MaterialTheme.typography.titleMedium.copy(
+                shadow = Shadow(color = Color.Black, blurRadius = 7f)
+            ),
+            modifier = if (background) {
+                Modifier
+                    .background(Color.Black.copy(alpha = 0.68f), VortexShapes.small)
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            } else {
+                Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+            }
+        )
+    }
+}
+
+private val SUBTITLE_MIME_TYPES = arrayOf(
+    "application/x-subrip",
+    "text/vtt",
+    "text/plain",
+    "application/octet-stream"
+)
 
 /**
  * Superficie de vídeo. [AspectRatioFrameLayout] conserva el encuadre elegido y dentro se

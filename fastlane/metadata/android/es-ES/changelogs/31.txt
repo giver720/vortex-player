@@ -1,0 +1,8 @@
+Audio Pro, subtítulos avanzados y reproducción inteligente.
+
+• Perfiles Seguro, Potente, Noche y Voz, comparación A/B y alerta de saturación.
+• Dos subtítulos simultáneos con sincronización, tamaño y fondo independientes.
+• Búsqueda opcional en OpenSubtitles con API key cifrada en el dispositivo.
+• Búfer adaptativo para local, HTTP, HLS y RTSP.
+• Recuperación automática HW → software conservando posición, pistas y subtítulos.
+• Panel de diagnóstico con códec, FPS, bitrate y cuadros perdidos.
