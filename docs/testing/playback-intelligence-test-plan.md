@@ -19,6 +19,8 @@
 - Primer fallo cambia HW → software, el segundo mantiene software y el tercero se expone.
 - Audio avanzando sin cuadros mostrados durante la gracia activa el fallback de hardware.
 - Solo-audio, superficie desconectada, estadísticas ausentes y software no activan ese fallback.
+- Una reanudación abre el medio en cero y devuelve el instante como seek posterior a `Playing`.
+- El selector MP4 prioriza AVC/H.264; MKV y WebM no imponen ese códec.
 - El formato de resolución no inventa dimensiones ausentes.
 
 ### Integración Android
@@ -27,6 +29,7 @@
 - El panel observa el `StateFlow` sin bloquear el hilo principal.
 - Cambiar medio reinicia contador y plan; cambiar pista no lo hace.
 - Reintento seguro conserva posición aproximada, velocidad, boost, pista y salida de vídeo.
+- La recuperación no añade `:start-time`; el seek se emite después del evento `Playing`.
 - El contador de cuadros mostrados aparece en el panel y avanza durante reproducción normal.
 - Liberar el player elimina el watchdog y no deja callbacks posteriores.
 
@@ -37,7 +40,7 @@
 3. Probar al menos un móvil Qualcomm, MediaTek y un dispositivo Android de memoria baja.
 4. Confirmar que un fallo hardware cambia a `SOFTWARE`, conserva el instante y sólo suma una recuperación.
 5. Reproducir un MP4 que dé audio con pantalla negra en HW; debe pasar a `SW` conservando el
-   instante y empezar a mostrar imagen tras una única recuperación.
+   instante y empezar a mostrar imagen tras una única recuperación, sin cuadros verdes al volver.
 6. Dejar una fuente realmente congelada más de 16 s; comprobar recuperación sin bucle.
 7. Probar HTTP progresivo, HLS VOD/live y RTSP con red estable, lenta y reconexión.
 8. Abrir el panel y comparar códec, resolución, FPS y cuadros mostrados con datos conocidos.
@@ -50,6 +53,7 @@
 - Códec no compatible ni por software: exactamente dos recuperaciones automáticas.
 - Estadísticas VLC nulas o parciales: mostrar `—`/cero sin cierre.
 - Seek durante recuperación: el último comando del usuario debe seguir siendo recuperable.
+- Reanudar cerca de un GOP largo no debe mostrar referencias verdes/corruptas.
 - No se envía ni persiste telemetría; inspeccionar tráfico y almacenamiento de la app.
 
 ## Brechas actuales

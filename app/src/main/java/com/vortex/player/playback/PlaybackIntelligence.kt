@@ -46,6 +46,25 @@ object PlaybackRecoveryPolicy {
     }
 }
 
+data class PlaybackStartPlan(
+    val mediaStartPositionMs: Long,
+    val seekAfterPlayingMs: Long?
+)
+
+/**
+ * Abrir el demuxer directamente a mitad de un GOP puede enseñar cuadros verdes hasta el siguiente
+ * fotograma clave. Se abre siempre de forma limpia y el seek preciso se hace con VLC ya iniciado.
+ */
+object PlaybackStartPolicy {
+    fun plan(requestedPositionMs: Long): PlaybackStartPlan {
+        val target = requestedPositionMs.coerceAtLeast(0L)
+        return PlaybackStartPlan(
+            mediaStartPositionMs = 0L,
+            seekAfterPlayingMs = target.takeIf { it > 0L }
+        )
+    }
+}
+
 data class VideoLivenessSample(
     val playbackActive: Boolean,
     val videoEnabled: Boolean,

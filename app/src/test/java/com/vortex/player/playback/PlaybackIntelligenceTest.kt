@@ -88,6 +88,17 @@ class PlaybackIntelligenceTest {
     }
 
     @Test
+    fun `resume opens cleanly and seeks only after VLC is playing`() {
+        val resume = PlaybackStartPolicy.plan(91_250L)
+        val beginning = PlaybackStartPolicy.plan(0L)
+
+        assertEquals(0L, resume.mediaStartPositionMs)
+        assertEquals(91_250L, resume.seekAfterPlayingMs)
+        assertEquals(0L, beginning.mediaStartPositionMs)
+        assertEquals(null, beginning.seekAfterPlayingMs)
+    }
+
+    @Test
     fun `audio progress without displayed video triggers hardware fallback`() {
         val blackVideo = VideoLivenessSample(
             playbackActive = true,

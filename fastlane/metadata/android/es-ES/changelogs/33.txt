@@ -1,0 +1,7 @@
+Hotfix de vídeo verde y compatibilidad MP4.
+
+• Inicio limpio del decodificador para evitar cuadros verdes o dañados.
+• Salto preciso a la posición guardada después de que VLC comience a reproducir.
+• Recuperación HW → software conservando la posición.
+• Las nuevas descargas MP4 priorizan H.264/AVC y audio M4A.
+• MKV y WebM mantienen AV1/VP9 para máxima calidad.

@@ -27,15 +27,18 @@ enum class VideoQuality(val label: String, private val maxHeight: Int?) {
      * preferredAudio]): el AAC no entra en webm ni el Opus en mp4 sin pelearse con ffmpeg,
      * y cuando eso pasaba yt-dlp renunciaba al contenedor pedido y devolvía otro.
      *
-     * Al vídeo, en cambio, no se le exige extensión a propósito. Por encima de 1080p
-     * YouTube sólo publica VP9 y AV1, de modo que filtrar por extensión haría que "el mejor
-     * mp4 de hasta 2160p" fuera en realidad el H.264 de 1080p, y pedir 4K devolvería 1080p
-     * sin decir nada.
+     * MP4 prioriza AVC/H.264 por compatibilidad real. Un contenedor MP4 también puede guardar
+     * AV1 o VP9, pero varios decodificadores Android los anuncian y luego entregan cuadros verdes
+     * o negros. Para máxima resolución con códecs modernos se puede elegir MKV o WebM.
      */
     fun formatSelector(container: VideoContainer = VideoContainer.MP4): String {
         val cap = maxHeight?.let { "[height<=$it]" } ?: ""
         val preferred = container.preferredAudio
         return buildString {
+            if (container == VideoContainer.MP4) {
+                append("bestvideo$cap[vcodec^=avc1]+bestaudio[ext=m4a]/")
+                append("best$cap[ext=mp4][vcodec^=avc1]/")
+            }
             if (preferred != null) append("bestvideo$cap+$preferred/")
             append("bestvideo$cap+bestaudio/")
             container.ytdlpName?.let { append("best$cap[ext=$it]/") }
@@ -47,10 +50,9 @@ enum class VideoQuality(val label: String, private val maxHeight: Int?) {
 /**
  * Contenedor del vídeo final.
  *
- * MP4 por defecto porque es el único que reproduce cualquier cosa: galería de Android,
- * WhatsApp, televisores, editores. MKV se ofrece porque acepta cualquier códec sin
- * reconvertir, que es lo que hace falta cuando la fuente trae AV1 u Opus y no se quiere
- * perder calidad. ORIGINAL deja lo que venga, sin reenvasar nada.
+ * MP4 por defecto porque es el contenedor más interoperable; su selector prioriza AVC/H.264
+ * para que esa compatibilidad sea real también a nivel de códec. MKV se ofrece porque acepta
+ * AV1, VP9 u Opus sin reconvertir cuando se prefiere calidad máxima. ORIGINAL deja lo que venga.
  */
 enum class VideoContainer(val label: String, val ytdlpName: String?) {
     MP4("MP4", "mp4"),

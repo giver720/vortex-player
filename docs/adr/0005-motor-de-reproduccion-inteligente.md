@@ -24,6 +24,8 @@ Mantener libVLC como único motor y añadir una capa determinista de inteligenci
 - comenzar con hardware y, ante el primer fallo o bloqueo confirmado, reabrir en software;
 - permitir un segundo reintento seguro y detenerse después para evitar bucles;
 - conservar índice, posición, velocidad, audio y voluntad de reproducción al recuperar;
+- abrir siempre el demuxer desde un estado limpio y aplicar la reanudación como seek preciso
+  después de `Playing`, evitando `:start-time` a mitad de un GOP;
 - vigilar avance cada cuatro segundos y considerar bloqueo sólo tras 16 segundos en estado listo;
 - vigilar también los cuadros realmente mostrados: si el audio avanza al menos 3 segundos pero
   hardware no muestra ninguno durante 8 segundos, reabrir automáticamente en software;
@@ -82,6 +84,11 @@ avance del reloj. Así detecta audio con pantalla negra sin degradar el modo sol
 reproducción en segundo plano. La ventana general de 16 segundos favorece evitar falsos positivos
 sobre una recuperación agresiva.
 
+La reanudación diferida evita que una recuperación HW → software empiece a decodificar sin todas
+las imágenes de referencia y enseñe verde hasta el siguiente fotograma clave. Para material nuevo,
+el selector MP4 prioriza AVC/H.264; MP4 es un contenedor y remultiplexar AV1/VP9 dentro de él no lo
+convierte en compatible con el hardware Android.
+
 La telemetría es local, no persiste historial y no sale del dispositivo. Su frecuencia de un
 segundo permite una UI útil sin consultar estadísticas nativas en cada evento de tiempo.
 
@@ -101,4 +108,6 @@ segundo permite una UI útil sin consultar estadísticas nativas en cada evento 
 4. [x] Exponer estadísticas VLC y panel visual.
 5. [x] Añadir pruebas JVM de clasificación y política.
 6. [x] Detectar audio con cero cuadros mostrados y degradar HW → software.
-7. [ ] Ejecutar la matriz física de códecs y fabricantes.
+7. [x] Hacer la recuperación y reanudación con apertura limpia y seek diferido.
+8. [x] Priorizar AVC/H.264 en nuevas descargas MP4.
+9. [ ] Ejecutar la matriz física de códecs y fabricantes.

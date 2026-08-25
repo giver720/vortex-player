@@ -1,0 +1,7 @@
+Green video and MP4 compatibility hotfix.
+
+• Clean decoder startup to prevent green or corrupted frames.
+• Precise seek to the saved position after VLC starts playing.
+• Position-preserving hardware-to-software recovery.
+• New MP4 downloads prioritize H.264/AVC video and M4A audio.
+• MKV and WebM retain AV1/VP9 for maximum quality.

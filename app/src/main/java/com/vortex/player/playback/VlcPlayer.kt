@@ -93,6 +93,7 @@ class VlcPlayer(
     private var lastDisplayedFramePositionMs = 0L
     private var lastDisplayedPictures = 0
     private var voutCount = 0
+    private var seekAfterPlayingMs: Long? = null
     private var lastDiagnosticsElapsedMs = 0L
     private var activeMediaKey: String? = null
     private val sessionSoftwareMediaKeys = mutableSetOf<String>()
@@ -185,6 +186,15 @@ class VlcPlayer(
                 recovering = false
                 recoveryScheduled = false
                 lastProgressElapsedMs = SystemClock.elapsedRealtime()
+                val deferredSeek = seekAfterPlayingMs
+                seekAfterPlayingMs = null
+                if (deferredSeek != null) {
+                    // Seek preciso después de inicializar demuxer y decodificador. Usar
+                    // `:start-time` al reabrir en software podía empezar a mitad de un GOP
+                    // y mostrar verde hasta el próximo fotograma clave.
+                    mediaPlayer.setTime(deferredSeek, false)
+                    lastKnownPositionMs = deferredSeek
+                }
                 resetVideoLivenessWatch(lastKnownPositionMs)
                 // Algunos dispositivos crean la salida de audio después de Playing; volver
                 // a mandar aquí el valor evita que el boost se pierda al cambiar de pista.
@@ -650,7 +660,14 @@ class VlcPlayer(
     private fun seekToVlc(positionMs: Long) {
         lastKnownPositionMs = positionMs
         resetVideoLivenessWatch(positionMs)
-        mediaPlayer.time = positionMs
+        if (vlcPlaybackState == Player.STATE_BUFFERING && !mediaPlayer.isPlaying) {
+            // Si todavía está abriendo, el seek se aplicará al recibir Playing. Mandarlo
+            // ahora puede ser ignorado y dejar después el target anterior pendiente.
+            seekAfterPlayingMs = positionMs.takeIf { it > 0L }
+        } else {
+            seekAfterPlayingMs = null
+            mediaPlayer.setTime(positionMs, false)
+        }
     }
 
     /**
@@ -660,6 +677,7 @@ class VlcPlayer(
     private fun openCurrent(startPositionMs: Long, play: Boolean, isRecovery: Boolean = false) {
         val item = playlist.getOrNull(currentIndex) ?: return
         val uri = item.localConfiguration?.uri ?: return
+        val startPlan = PlaybackStartPolicy.plan(startPositionMs)
         val mediaKey = "$currentIndex|$uri"
         val reopeningSameMedia = mediaKey == activeMediaKey
         if (!reopeningSameMedia) {
@@ -712,19 +730,16 @@ class VlcPlayer(
 
         media.setHWDecoderEnabled(decoderMode == DecoderMode.HARDWARE, false)
         activePlan.mediaOptions.forEach(media::addOption)
-        if (startPositionMs > 0) {
-            // VLC aplica :start-time en segundos con decimales.
-            media.addOption(":start-time=${startPositionMs / 1000.0}")
-        }
         if (!videoEnabled) media.addOption(":no-video")
 
         mediaPlayer.media = media
         media.release()
         restoreExternalSubtitlesOnPlaying = reopeningSameMedia && externalSubtitleUris.isNotEmpty()
 
-        lastKnownPositionMs = startPositionMs
+        seekAfterPlayingMs = startPlan.seekAfterPlayingMs
+        lastKnownPositionMs = startPlan.seekAfterPlayingMs ?: startPlan.mediaStartPositionMs
         lastProgressElapsedMs = SystemClock.elapsedRealtime()
-        resetVideoLivenessWatch(startPositionMs)
+        resetVideoLivenessWatch(lastKnownPositionMs)
         lastDiagnosticsElapsedMs = 0L
         durationMs = C.TIME_UNSET
         pendingError = null

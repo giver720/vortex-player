@@ -362,8 +362,9 @@ fun DownloadsScreen(
                     Text(
                         text = when (container) {
                             VideoContainer.MP4 ->
-                                "El que reproduce cualquier cosa: galería, WhatsApp, " +
-                                    "televisores, editores. Es la opción recomendada."
+                                "La opción compatible: prioriza H.264 para evitar pantallas " +
+                                    "verdes o negras en Android. En 4K puede elegir menos " +
+                                    "resolución si la fuente sólo ofrece AV1 o VP9."
                             VideoContainer.MKV ->
                                 "Acepta cualquier códec sin reconvertir. Útil en 4K, donde " +
                                     "el vídeo viene en AV1 o VP9, pero no todo lo reproduce."
