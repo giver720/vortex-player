@@ -162,6 +162,60 @@ class PlaybackIntelligenceTest {
     }
 
     @Test
+    fun `surface reattach reopens when timeline advances without a new frame`() {
+        val blackSurface = SurfaceReattachSample(
+            playbackActive = true,
+            outputAttached = true,
+            hasVideoTrack = true,
+            elapsedSinceAttachMs = SurfaceReattachPolicy.FRAME_TIMEOUT_MS,
+            timelineAdvanceMs = SurfaceReattachPolicy.MIN_TIMELINE_ADVANCE_MS,
+            displayedFramesAtAttach = 120,
+            displayedFramesNow = 120
+        )
+
+        assertTrue(SurfaceReattachPolicy.shouldReopen(blackSurface))
+        assertTrue(
+            SurfaceReattachPolicy.shouldReopen(
+                blackSurface.copy(displayedFramesAtAttach = null, displayedFramesNow = null)
+            )
+        )
+    }
+
+    @Test
+    fun `surface reattach keeps healthy video and inactive playback untouched`() {
+        val healthy = SurfaceReattachSample(
+            playbackActive = true,
+            outputAttached = true,
+            hasVideoTrack = true,
+            elapsedSinceAttachMs = SurfaceReattachPolicy.FRAME_TIMEOUT_MS,
+            timelineAdvanceMs = SurfaceReattachPolicy.MIN_TIMELINE_ADVANCE_MS,
+            displayedFramesAtAttach = 120,
+            displayedFramesNow = 121
+        )
+
+        assertFalse(SurfaceReattachPolicy.shouldReopen(healthy))
+        assertFalse(SurfaceReattachPolicy.shouldReopen(healthy.copy(playbackActive = false)))
+        assertFalse(SurfaceReattachPolicy.shouldReopen(healthy.copy(outputAttached = false)))
+        assertFalse(SurfaceReattachPolicy.shouldReopen(healthy.copy(hasVideoTrack = false)))
+        assertFalse(
+            SurfaceReattachPolicy.shouldReopen(
+                healthy.copy(
+                    displayedFramesNow = healthy.displayedFramesAtAttach,
+                    elapsedSinceAttachMs = SurfaceReattachPolicy.FRAME_TIMEOUT_MS - 1
+                )
+            )
+        )
+        assertFalse(
+            SurfaceReattachPolicy.shouldReopen(
+                healthy.copy(
+                    displayedFramesNow = healthy.displayedFramesAtAttach,
+                    timelineAdvanceMs = SurfaceReattachPolicy.MIN_TIMELINE_ADVANCE_MS - 1
+                )
+            )
+        )
+    }
+
+    @Test
     fun `diagnostics formats unavailable and known resolution`() {
         assertEquals("—", PlaybackDiagnostics().resolutionLabel)
         assertEquals("3840 × 2160", PlaybackDiagnostics(width = 3840, height = 2160).resolutionLabel)

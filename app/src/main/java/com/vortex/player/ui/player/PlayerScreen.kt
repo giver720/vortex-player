@@ -593,7 +593,10 @@ private fun VideoSurface(
     // enganche/desenganche que deja la superficie muerta y el vídeo en negro.
     val attachedTo = remember { arrayOfNulls<Any>(1) }
 
-    DisposableEffect(Unit) {
+    // La clave debe ser el motor real. Si la primera composición ocurre antes de que el
+    // servicio publique sus controles, capturar `null` con una clave constante impediría
+    // soltar la superficie al salir y VLC intentaría volver sobre una vista destruida.
+    DisposableEffect(controls) {
         onDispose {
             controls?.detachVideoOutput()
             attachedTo[0] = null

@@ -138,6 +138,8 @@ atrás sin depender de que alguien recuerde volver aquí.
   Bluetooth pueden restaurarla incluso después de que Android destruya el proceso.
 - Gestos: brillo a la izquierda, volumen a la derecha, arrastre horizontal para buscar,
   doble toque lateral para ±10 s, bloqueo de controles.
+- La salida de vídeo se reconecta al volver desde la biblioteca; si un decodificador hardware
+  deja audio sin imagen, Vórtex recupera el mismo medio conservando la posición.
 - Selección de pistas de audio y subtítulos, velocidad de 0,5× a 3× con corrección de tono.
 - Centro de subtítulos: abre SRT, WebVTT, ASS y SSA desde el selector de Android, ajusta la
   sincronización principal entre −60 y +60 segundos y permite superponer un segundo SRT/VTT

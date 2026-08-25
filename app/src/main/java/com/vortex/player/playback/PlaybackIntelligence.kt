@@ -96,6 +96,38 @@ object VideoLivenessPolicy {
             sample.timelineAdvanceMs >= MIN_TIMELINE_ADVANCE_MS
 }
 
+data class SurfaceReattachSample(
+    val playbackActive: Boolean,
+    val outputAttached: Boolean,
+    val hasVideoTrack: Boolean,
+    val elapsedSinceAttachMs: Long,
+    val timelineAdvanceMs: Long,
+    val displayedFramesAtAttach: Int?,
+    val displayedFramesNow: Int?
+)
+
+/**
+ * Detecta una salida nueva que VLC aceptó pero a la que el decodificador no entregó cuadros.
+ * A diferencia del watchdog general, admite que algunos builds no expongan estadísticas: si
+ * el audio/reloj avanza y hay una pista de vídeo, una superficie negra también debe recuperarse.
+ */
+object SurfaceReattachPolicy {
+    const val FRAME_TIMEOUT_MS = 3_000L
+    const val MIN_TIMELINE_ADVANCE_MS = 750L
+
+    fun shouldReopen(sample: SurfaceReattachSample): Boolean {
+        val deliveredNewFrame = sample.displayedFramesAtAttach != null &&
+            sample.displayedFramesNow != null &&
+            sample.displayedFramesNow > sample.displayedFramesAtAttach
+        return sample.playbackActive &&
+            sample.outputAttached &&
+            sample.hasVideoTrack &&
+            sample.elapsedSinceAttachMs >= FRAME_TIMEOUT_MS &&
+            sample.timelineAdvanceMs >= MIN_TIMELINE_ADVANCE_MS &&
+            !deliveredNewFrame
+    }
+}
+
 data class PlaybackDiagnostics(
     val source: PlaybackSourceKind = PlaybackSourceKind.LOCAL,
     val decoder: DecoderMode = DecoderMode.HARDWARE,

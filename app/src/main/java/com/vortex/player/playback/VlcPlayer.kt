@@ -93,6 +93,7 @@ class VlcPlayer(
     private var lastDisplayedFramePositionMs = 0L
     private var lastDisplayedPictures = 0
     private var voutCount = 0
+    private var videoAttachGeneration = 0L
     private var seekAfterPlayingMs: Long? = null
     private var ignoreNextStoppedEvent = false
     private var released = false
@@ -340,10 +341,18 @@ class VlcPlayer(
         }
     }
 
-    private fun resetVideoLivenessWatch(positionMs: Long) {
+    private fun resetVideoLivenessWatch(
+        positionMs: Long,
+        displayedPicturesBaseline: Int? = null
+    ) {
         lastDisplayedFrameElapsedMs = SystemClock.elapsedRealtime()
         lastDisplayedFramePositionMs = positionMs.coerceAtLeast(0L)
-        lastDisplayedPictures = 0
+        // Las estadísticas de VLC son acumuladas durante la vida del Media. Al reconectar
+        // una vista no vuelven a cero: hacerlo aquí convertía cuadros viejos en evidencia de
+        // una salida viva y dejaba la nueva superficie negra hasta el siguiente reinicio.
+        lastDisplayedPictures = displayedPicturesBaseline
+            ?: runCatching { mediaPlayer.media?.stats?.displayedPictures }.getOrNull()
+            ?: 0
         voutCount = 0
     }
 
@@ -905,10 +914,54 @@ class VlcPlayer(
             )
         )
         mediaPlayer.attachViews(layout, null, true, false)
-        resetVideoLivenessWatch(lastKnownPositionMs)
+        val generation = ++videoAttachGeneration
+        val attachedAtMs = SystemClock.elapsedRealtime()
+        val positionAtAttachMs = lastKnownPositionMs
+        val displayedAtAttach = runCatching {
+            mediaPlayer.media?.stats?.displayedPictures
+        }.getOrNull()
+        resetVideoLivenessWatch(lastKnownPositionMs, displayedAtAttach)
+
+        // Algunos decodificadores hardware no redirigen sus buffers al Surface nuevo al
+        // volver desde biblioteca. Damos tiempo a una salida normal y, sólo si el reloj
+        // avanza sin entregar un cuadro nuevo, reabrimos el mismo medio en el mismo punto.
+        handler.postDelayed({
+            if (released || generation != videoAttachGeneration || videoLayout !== layout) {
+                return@postDelayed
+            }
+            val displayedNow = runCatching {
+                mediaPlayer.media?.stats?.displayedPictures
+            }.getOrNull()
+            val hasVideoTrack = runCatching {
+                mediaPlayer.videoTracksCount > 0 || mediaPlayer.currentVideoTrack != null || voutCount > 0
+            }.getOrDefault(false)
+            val shouldReopen = SurfaceReattachPolicy.shouldReopen(
+                SurfaceReattachSample(
+                    playbackActive = wantsToPlay &&
+                        vlcPlaybackState == Player.STATE_READY &&
+                        !recoveryScheduled,
+                    outputAttached = videoLayout === layout,
+                    hasVideoTrack = hasVideoTrack,
+                    elapsedSinceAttachMs = SystemClock.elapsedRealtime() - attachedAtMs,
+                    timelineAdvanceMs = (lastKnownPositionMs - positionAtAttachMs).coerceAtLeast(0L),
+                    displayedFramesAtAttach = displayedAtAttach,
+                    displayedFramesNow = displayedNow
+                )
+            )
+            if (shouldReopen) {
+                val position = mediaPlayer.time.takeIf { it >= 0L } ?: lastKnownPositionMs
+                recovering = true
+                updateDiagnostics(
+                    PlaybackHealth.RECOVERING,
+                    "Reconectando la imagen al volver al reproductor"
+                )
+                openCurrent(position.coerceAtLeast(0L), play = true, isRecovery = true)
+            }
+        }, SurfaceReattachPolicy.FRAME_TIMEOUT_MS)
     }
 
     override fun detachVideoOutput() {
+        videoAttachGeneration++
         if (videoLayout == null) return
         mediaPlayer.detachViews()
         (videoLayout?.parent as? ViewGroup)?.removeView(videoLayout)
