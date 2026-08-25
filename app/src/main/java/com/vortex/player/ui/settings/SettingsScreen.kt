@@ -44,6 +44,7 @@ import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioScope
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EqPreset
+import com.vortex.player.audio.VlcEqualizerPlanner
 import com.vortex.player.spotify.SpotifyAccountState
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -51,9 +52,9 @@ import com.vortex.player.ui.theme.VortexShapes
 /**
  * Ajustes de sonido.
  *
- * Todo son efectos del procesador de audio del propio móvil, aplicados sobre la sesión
- * del reproductor: no se recodifica nada. La pantalla se construye a partir de lo que el
- * dispositivo dice soportar, para no mostrar controles que no harían nada.
+ * Todo se procesa dentro del motor VLC: no se recodifica el archivo. La pantalla se
+ * construye a partir de las capacidades reales del motor para no mostrar controles que
+ * no harían nada.
  */
 @Composable
 fun SettingsScreen(
@@ -200,20 +201,18 @@ fun SettingsScreen(
             if (caps.hasBoost) {
                 item {
                     EffectSlider(
-                        title = "VOLUMEN EXTRA",
-                        hint = if (caps.advanced && settings.limiterOn) {
-                            "Sube por encima del máximo del sistema. La protección reserva " +
-                                "margen para la curva y evita que los picos recorten."
-                        } else if (caps.advanced) {
-                            "Sube por encima del máximo del sistema. Con la protección " +
-                                "apagado no hay red: pasarse de aquí recorta y distorsiona."
-                        } else {
-                            "Sube por encima del máximo del sistema. Sin limitador, pasarse " +
-                                "distorsiona."
-                        },
+                        title = "BOOST VLC",
+                        hint = "Hasta +6 dB usa el volumen software de VLC (100–200 %); " +
+                            "por encima añade preamplificación. Es una subida real y puede " +
+                            "distorsionar en grabaciones que ya vienen al máximo.",
                         value = settings.boostDb,
                         max = AudioSettings.MAX_BOOST_DB,
-                        readout = { "+%.0f dB".format(it) },
+                        readout = {
+                            "+%.0f dB · %d %% VLC".format(
+                                it,
+                                VlcEqualizerPlanner.volumePercentForBoost(it)
+                            )
+                        },
                         on = settings.boostOn,
                         enabled = active,
                         onToggle = viewModel::toggleBoost,
@@ -589,8 +588,9 @@ private fun OutputProfileSelector(
 /**
  * Protección de picos, ahora opcional.
  *
- * libVLC no expone un limitador dinámico. La protección reserva margen igual al realce más
- * alto de la curva: evita clipping sin comprimir ni aplastar los transitorios.
+ * libVLC no expone un limitador dinámico. La protección reserva margen para el ecualizador
+ * cuando el boost está apagado; el boost muestra su propia advertencia porque amplificar una
+ * grabación que ya llega a 0 dB siempre puede distorsionar.
  */
 @Composable
 private fun LimiterToggle(
@@ -640,8 +640,8 @@ private fun LimiterToggle(
         }
         Text(
             text = if (on) {
-                "Reserva margen para el realce más alto de la curva. Evita clipping sin " +
-                    "comprimir ni aplastar los transitorios."
+                "Reserva margen para la curva cuando el boost está apagado. No comprime ni " +
+                    "aplasta los transitorios."
             } else {
                 "Apagada. La ganancia se aplica completa, pero el volumen extra y las " +
                     "curvas cargadas de graves pueden recortar y sonar a chasquido."

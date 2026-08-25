@@ -17,9 +17,9 @@ lo que notificación, pantalla de bloqueo, mandos Bluetooth, ventana flotante y 
 de Android continúan funcionando sin introducir un segundo motor multimedia.
 
 **Sonido procesado dentro de VLC.** Ecualizador de diez bandas, presets, graves,
-claridad y volumen extra ya no dependen de una sesión de efectos Android. Los perfiles
-por altavoz, cable y Bluetooth se aplican directamente al ecualizador nativo de libVLC,
-con margen automático para evitar clipping cuando está activa la protección de picos.
+claridad y volumen extra ya no dependen de una sesión de efectos Android. El boost usa
+primero el volumen software nativo de VLC hasta 200 % y, a partir de ahí, su preamplificador.
+Los perfiles por altavoz, cable y Bluetooth se aplican directamente al motor.
 
 **Un MP4 suena como un MP3.** El modo solo-audio apaga la decodificación de vídeo sin
 tocar el audio ni la posición: VLC desactiva la pista con `setVideoTrackEnabled(false)`.

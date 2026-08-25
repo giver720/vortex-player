@@ -117,7 +117,14 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleVirtualizer() = update { it.copy(virtualizerOn = !it.virtualizerOn) }
 
     fun setBoost(db: Float) = update { it.copy(boostDb = db, boostOn = db > 0f) }
-    fun toggleBoost() = update { it.copy(boostOn = !it.boostOn) }
+    fun toggleBoost() = update {
+        if (it.boostOn) {
+            it.copy(boostOn = false)
+        } else {
+            // Encender un boost guardado en 0 dB parecía funcionar pero no hacía nada.
+            it.copy(boostOn = true, boostDb = it.boostDb.takeIf { db -> db > 0f } ?: 6f)
+        }
+    }
 
     fun setCompressor(amount: Float) =
         update { it.copy(compressor = amount, compressorOn = amount > 0f) }

@@ -104,7 +104,7 @@ data class AudioSettings(
     val ambience: Int = 0,
     val ambienceOn: Boolean = false,
 
-    /** Amplificación en decibelios por encima del máximo del sistema. */
+    /** Amplificación VLC: volumen software hasta 200 % y preamplificación por encima. */
     val boostDb: Float = 0f,
     val boostOn: Boolean = false,
 

@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EqPreset
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,7 +45,13 @@ class VlcPlayerSmokeTest {
                 }
             })
             player.applyAudioSettings(
-                AudioSettings(enabled = true, preset = EqPreset.ROCK, limiterOn = true)
+                AudioSettings(
+                    enabled = true,
+                    preset = EqPreset.ROCK,
+                    boostOn = true,
+                    boostDb = 6f,
+                    limiterOn = true
+                )
             )
             player.setMediaItem(MediaItem.fromUri(media.toURI().toString()))
             player.prepare()
@@ -56,6 +63,7 @@ class VlcPlayerSmokeTest {
 
         onMain {
             assertTrue(player.playbackState == Player.STATE_READY || player.isPlaying)
+            assertEquals(200, player.appliedVlcVolumePercent)
             player.release()
         }
     }

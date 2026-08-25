@@ -14,6 +14,7 @@ class VlcEqualizerPlannerTest {
         val plan = VlcEqualizerPlanner.build(AudioSettings(enabled = false), vlcBands)
 
         assertFalse(plan.enabled)
+        assertEquals(100, plan.volumePercent)
         assertTrue(plan.bandGainsDb.isEmpty())
     }
 
@@ -24,6 +25,7 @@ class VlcEqualizerPlannerTest {
         assertTrue(plan.enabled)
         plan.bandGainsDb.forEach { assertEquals(0f, it, 0.001f) }
         assertEquals(0f, plan.preampDb, 0.001f)
+        assertEquals(100, plan.volumePercent)
     }
 
     @Test
@@ -61,20 +63,51 @@ class VlcEqualizerPlannerTest {
     }
 
     @Test
-    fun `peak protection reserves headroom while boost remains bounded`() {
+    fun `peak protection reserves equalizer headroom when boost is off`() {
         val settings = AudioSettings(
             enabled = true,
             preset = EqPreset.ELECTRONIC,
-            boostOn = true,
-            boostDb = 15f,
             limiterOn = true
         )
 
         val protected = VlcEqualizerPlanner.build(settings, vlcBands)
-        val unprotected = VlcEqualizerPlanner.build(settings.copy(limiterOn = false), vlcBands)
 
-        assertEquals(15f - protected.bandGainsDb.max(), protected.preampDb, 0.001f)
-        assertEquals(15f, unprotected.preampDb, 0.001f)
+        assertEquals(-protected.bandGainsDb.max(), protected.preampDb, 0.001f)
+        assertEquals(100, protected.volumePercent)
         assertTrue(protected.bandGainsDb.all { it in -20f..20f })
+    }
+
+    @Test
+    fun `boost uses VLC 200 percent stage before equalizer preamp`() {
+        val sixDb = VlcEqualizerPlanner.build(
+            AudioSettings(enabled = true, boostOn = true, boostDb = 6f),
+            vlcBands
+        )
+        val fifteenDb = VlcEqualizerPlanner.build(
+            AudioSettings(enabled = true, boostOn = true, boostDb = 15f),
+            vlcBands
+        )
+
+        assertEquals(200, sixDb.volumePercent)
+        assertEquals(0f, sixDb.preampDb, 0.03f)
+        assertEquals(200, fifteenDb.volumePercent)
+        assertEquals(15f - 6.0206f, fifteenDb.preampDb, 0.001f)
+    }
+
+    @Test
+    fun `boost is not cancelled by a positive preset`() {
+        val plan = VlcEqualizerPlanner.build(
+            AudioSettings(
+                enabled = true,
+                preset = EqPreset.ROCK,
+                boostOn = true,
+                boostDb = 5f,
+                limiterOn = true
+            ),
+            vlcBands
+        )
+
+        assertTrue(plan.volumePercent >= 177)
+        assertEquals(0f, plan.preampDb, 0.001f)
     }
 }

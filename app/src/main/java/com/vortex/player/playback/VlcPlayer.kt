@@ -66,6 +66,9 @@ class VlcPlayer(
     private var bufferedPercent: Float = 0f
     private var speed: Float = 1f
     private var currentVolume: Float = 1f
+    private var boostVolumePercent: Int = NORMAL_VLC_VOLUME
+    internal var appliedVlcVolumePercent: Int = NORMAL_VLC_VOLUME
+        private set
     private var videoSize: VideoSize = VideoSize.UNKNOWN
     private var pendingError: PlaybackException? = null
     private var repeat: Int = Player.REPEAT_MODE_OFF
@@ -112,6 +115,9 @@ class VlcPlayer(
             MediaPlayer.Event.Playing -> {
                 vlcPlaybackState = Player.STATE_READY
                 wantsToPlay = true
+                // Algunos dispositivos crean la salida de audio después de Playing; volver
+                // a mandar aquí el valor evita que el boost se pierda al cambiar de pista.
+                applyVlcVolume()
                 refreshDuration()
             }
 
@@ -303,6 +309,8 @@ class VlcPlayer(
         audioSettings = settings
         runCatching {
             if (!settings.enabled) {
+                boostVolumePercent = NORMAL_VLC_VOLUME
+                applyVlcVolume()
                 mediaPlayer.setEqualizer(null)
                 return
             }
@@ -310,6 +318,8 @@ class VlcPlayer(
                 MediaPlayer.Equalizer.getBandFrequency(index)
             }
             val plan = VlcEqualizerPlanner.build(settings, frequencies)
+            boostVolumePercent = plan.volumePercent
+            applyVlcVolume()
             val equalizer = MediaPlayer.Equalizer.create()
             check(equalizer.setPreAmp(plan.preampDb)) { "VLC rechazó el preamplificador" }
             plan.bandGainsDb.forEachIndexed { index, gain ->
@@ -329,8 +339,20 @@ class VlcPlayer(
 
     override fun handleSetVolume(volume: Float): ListenableFuture<*> {
         currentVolume = volume.coerceIn(0f, 1f)
-        mediaPlayer.volume = (currentVolume * 100).toInt()
+        applyVlcVolume()
         return Futures.immediateVoidFuture()
+    }
+
+    /** Mantiene el volumen Media3 y el boost VLC como dos controles independientes. */
+    private fun applyVlcVolume() {
+        val target = (currentVolume * boostVolumePercent).toInt()
+            .coerceIn(0, MAX_VLC_VOLUME)
+        val result = mediaPlayer.setVolume(target)
+        if (result == 0) {
+            appliedVlcVolumePercent = target
+        } else {
+            Log.w(TAG, "VLC rechazó el volumen software $target %")
+        }
     }
 
     override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {
@@ -515,6 +537,8 @@ class VlcPlayer(
 
     private companion object {
         const val TAG = "VlcPlayer"
+        const val NORMAL_VLC_VOLUME = 100
+        const val MAX_VLC_VOLUME = 200
 
         val AVAILABLE_COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(
