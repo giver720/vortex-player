@@ -12,18 +12,22 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -90,13 +94,13 @@ fun SelectionBar(
                 Icon(Icons.Filled.SelectAll, "Seleccionar todo", tint = VortexPalette.TextMid)
             }
             IconButton(onClick = onQueue) {
-                Icon(Icons.Filled.PlaylistPlay, "Reproducir", tint = VortexPalette.TextMid)
+                Icon(Icons.AutoMirrored.Filled.PlaylistPlay, "Opciones de reproducción", tint = VortexPalette.TextMid)
             }
             IconButton(onClick = onFavorite) {
                 Icon(Icons.Filled.Favorite, "Favorito", tint = VortexPalette.TextMid)
             }
             IconButton(onClick = onAddToPlaylist) {
-                Icon(Icons.Filled.PlaylistAdd, "Añadir a lista", tint = VortexPalette.TextMid)
+                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Añadir a lista", tint = VortexPalette.TextMid)
             }
             IconButton(onClick = onShare) {
                 Icon(Icons.Filled.Share, "Compartir", tint = VortexPalette.TextMid)
@@ -104,6 +108,83 @@ fun SelectionBar(
             IconButton(onClick = onDelete) {
                 Icon(Icons.Filled.Delete, "Eliminar", tint = VortexPalette.Magenta)
             }
+        }
+    }
+}
+
+/** Decide cómo entra la selección actual en la cola sin reemplazarla accidentalmente. */
+@Composable
+fun QueueSelectionDialog(
+    count: Int,
+    queueIsEmpty: Boolean,
+    onDismiss: () -> Unit,
+    onPlayNow: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToEnd: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = VortexPalette.GraphiteRaised,
+        title = {
+            Text(
+                "$count ARCHIVOS SELECCIONADOS",
+                style = MaterialTheme.typography.labelLarge,
+                color = VortexPalette.TextHigh
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                QueueChoiceRow(
+                    icon = Icons.Filled.PlayArrow,
+                    title = "REPRODUCIR AHORA",
+                    detail = "Crea una cola nueva únicamente con la selección.",
+                    onClick = onPlayNow
+                )
+                QueueChoiceRow(
+                    icon = Icons.Filled.SkipNext,
+                    title = "REPRODUCIR SIGUIENTE",
+                    detail = if (queueIsEmpty) {
+                        "La cola está vacía; comenzará con la selección."
+                    } else {
+                        "Inserta la selección después del archivo actual."
+                    },
+                    onClick = onPlayNext
+                )
+                QueueChoiceRow(
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    title = "AÑADIR AL FINAL",
+                    detail = "Conserva la reproducción y amplía la cola.",
+                    onClick = onAddToEnd
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCELAR", color = VortexPalette.TextLow)
+            }
+        }
+    )
+}
+
+@Composable
+private fun QueueChoiceRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    detail: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = VortexPalette.Neon, modifier = Modifier.size(25.dp))
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, color = VortexPalette.TextHigh)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = VortexPalette.TextLow)
         }
     }
 }

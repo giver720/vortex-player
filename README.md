@@ -82,6 +82,36 @@ si el decodificador del dispositivo falla o la reproducción deja de avanzar. El
 reproductor muestra fuente, HW/SW, códec, resolución, FPS, bitrate, cuadros perdidos y las
 recuperaciones realizadas.
 
+**Centro de fuentes de red.** Desde la biblioteca se pueden abrir y guardar transmisiones
+HTTP(S), HLS/M3U8, RTSP, RTMP, MMS, UDP y TCP. La pantalla detecta el protocolo y si parece
+audio o vídeo, permite corregir el tipo manualmente, separa favoritos de recientes y evita
+duplicados. Cámaras y servidores de la red local funcionan aunque esa Wi-Fi no tenga salida
+a Internet. Las URLs con usuario, contraseña, token o firma se reproducen sólo en memoria:
+no entran al historial, a favoritos ni a la sesión persistente.
+
+**Enviar a la TV con Google Cast.** El botón Cast del reproductor descubre Chromecast,
+Google TV y receptores compatibles. HTTP(S) y HLS se entregan directamente; para un archivo
+local Vórtex levanta un puente HTTP temporal en la red local, protegido por un token aleatorio,
+con CORS y rangos para poder avanzar. VLC sólo se pausa cuando el receptor confirma la carga.
+La reproducción remota se controla desde el reproductor, el mini reproductor, la notificación
+y la pantalla expandida oficial de Cast. RTSP, RTMP, MMS, UDP y TCP siguen reproduciéndose en
+el teléfono porque el receptor Cast predeterminado no admite esos protocolos.
+
+**Playlists sin rodeos.** El centro de playlists usa tarjetas con mosaico, duración, origen y
+acciones directas para reproducir, mezclar, poner después o añadir a la cola. Cada lista tiene
+editor propio: búsqueda, selección múltiple, swipe para quitar, arrastre para reordenar, deshacer,
+portada, descripción, limpieza de archivos ausentes y orden por título, artista, álbum o duración.
+La cola actual se guarda con un toque y las listas entran/salen como M3U/M3U8. Las playlists
+inteligentes se actualizan con la biblioteca, y una playlist de Spotify puede convertirse en una
+lista local que distingue lo disponible de lo que todavía falta. Al usar Cast se envía la cola
+completa, incluidos archivos locales mediante el puente temporal.
+
+**Cola bajo control.** El dock y el reproductor abren una cola visual común. Desde ella se
+pueden buscar y seleccionar varios MP3, audios o vídeos, insertarlos como siguientes o al final,
+saltar a cualquier elemento, cambiar el orden y quitar uno o varios sin reiniciar el medio actual.
+La selección múltiple de la biblioteca también pregunta si debe reproducir ahora, después o al
+final, evitando reemplazar por accidente lo que ya estaba sonando.
+
 **Se actualiza sola.** Vórtex consulta las publicaciones de este repositorio, elige el APK
 que corresponde a la arquitectura del móvil, lo descarga con progreso y se lo entrega al
 instalador del sistema. Al no estar en ninguna tienda, esta es la vía para no quedarse
@@ -95,7 +125,7 @@ atrás sin depender de que alguien recuerde volver aquí.
 - Árbol de carpetas navegable, con ramas plegables y migas de pan.
 - Búsqueda unificada por nombre de fichero, carpeta y ruta, con resultados agrupados.
 - Orden por fecha, nombre, duración, tamaño o resolución, y vista rejilla o lista.
-- Selección múltiple con acciones en bloque, listas de reproducción propias y favoritos.
+- Selección múltiple, cola visual editable, playlists, M3U/M3U8, listas inteligentes y favoritos.
 - "Continuar viendo" conserva cada 4 segundos la cola completa, la pista, posición, modo
   solo-audio, velocidad, repetición y aleatorio en un archivo atómico. El dock y los botones
   Bluetooth pueden restaurarla incluso después de que Android destruya el proceso.
@@ -111,6 +141,8 @@ atrás sin depender de que alguien recuerde volver aquí.
   cifra con Android Keystore y nunca se incluye en el repositorio ni se escribe en logs.
 - Temporizador de apagado.
 - Reproducción en segundo plano con la pantalla apagada.
+- Fuentes de red con pegado rápido, detección de protocolo, favoritos e historial.
+- Google Cast para HTTP(S), HLS y archivos locales, con controles remotos persistentes.
 - Se abre desde otras apps para cualquier `video/*`, `audio/*`, HLS, RTSP, RTMP y MMS.
 
 ## Instalación
@@ -150,8 +182,8 @@ imposible —VLC lo hace— pero es un proyecto en sí mismo.
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Seguir sonando con la app cerrada. |
 | `FOREGROUND_SERVICE_DATA_SYNC` | Que las descargas no se corten al salir de la app. |
 | `POST_NOTIFICATIONS` | Controles en la notificación y progreso de descarga. |
-| `INTERNET` | Streaming y descargas. |
-| `ACCESS_NETWORK_STATE` | Respetar el modo sólo Wi-Fi y esperar una conexión válida. |
+| `INTERNET` | Streaming, descargas y puente local para Google Cast. |
+| `ACCESS_NETWORK_STATE` | Mostrar el transporte activo, respetar sólo Wi-Fi y elegir la dirección local para Cast. |
 
 ## Compilar
 
@@ -182,6 +214,8 @@ app/src/main/java/com/vortex/player/
 │   └── PlaybackService.kt   Sesión multimedia con VLC como motor único
 ├── popup/           Ventana flotante (overlay + Compose)
 ├── download/        yt-dlp, cola, destino y publicación en la mediateca
+├── network/         Validación, privacidad, favoritos e historial de fuentes remotas
+├── cast/            Google Cast, handoff remoto y puente HTTP local temporal
 ├── spotify/         Catálogo, reglas actualizables, paginación y etiquetas
 ├── subtitle/        Parser local, caché segura y cliente oficial de OpenSubtitles
 ├── update/          Comprobación, descarga e instalación desde las Releases

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.vortex.player.data.MediaRepository
 import com.vortex.player.data.db.SpotifyPlaylistEntity
 import com.vortex.player.data.db.SpotifyTrackEntity
+import com.vortex.player.data.db.PlaylistItemDraft
 import com.vortex.player.spotify.LocalAudioCandidate
 import com.vortex.player.spotify.SpotifyAccountState
 import com.vortex.player.spotify.SpotifyAuth
@@ -78,6 +79,9 @@ class SpotifyHubViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
     init {
         SpotifyAuth.initialize(app)
         if (mediaRepository.library.value.loading) mediaRepository.refresh()
@@ -116,6 +120,50 @@ class SpotifyHubViewModel(app: Application) : AndroidViewModel(app) {
 
     fun consumeError() {
         _error.value = null
+    }
+
+    /** Crea una playlist editable conservando también las pistas que aún faltan. */
+    fun importCurrentToVortex() {
+        val playlist = selectedPlaylist.value ?: return
+        val currentTracks = tracks.value
+        if (currentTracks.isEmpty()) return
+        val localByUri = mediaRepository.library.value.entries.associateBy { it.uri.toString() }
+        val drafts = currentTracks.map { item ->
+            val local = item.localMatch?.local?.uri?.let(localByUri::get)
+            local?.let { entry ->
+                PlaylistItemDraft(
+                    uri = entry.uri.toString(),
+                    title = entry.title.ifBlank { entry.displayName },
+                    artist = entry.artist,
+                    album = entry.album,
+                    durationMs = entry.durationMs,
+                    isVideo = entry.isVideo
+                )
+            } ?: PlaylistItemDraft(
+                uri = item.track.spotifyUrl
+                    ?: item.track.spotifyId?.let { "spotify:track:$it" }
+                    ?: "spotify:missing:${playlist.id}:${item.track.position}",
+                title = item.track.title,
+                artist = item.track.artist,
+                album = item.track.album,
+                durationMs = item.track.durationMs,
+                isVideo = false
+            )
+        }
+        viewModelScope.launch {
+            mediaRepository.createPlaylistFromDrafts(
+                name = playlist.name,
+                entries = drafts,
+                source = "SPOTIFY",
+                description = "Importada de Spotify · las pistas ausentes quedan señaladas"
+            )
+            val matched = currentTracks.count { it.localMatch != null }
+            _message.value = "$matched locales · ${currentTracks.size - matched} pendientes · playlist creada"
+        }
+    }
+
+    fun consumeMessage() {
+        _message.value = null
     }
 
     private fun Throwable.userMessage(): String = message ?: "No se pudo sincronizar Spotify"

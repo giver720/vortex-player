@@ -24,9 +24,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +65,7 @@ fun SpotifyHubScreen(
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
 
     LaunchedEffect(account) {
         if (account is SpotifyAccountState.Connected && playlists.isEmpty()) {
@@ -110,6 +114,19 @@ fun SpotifyHubScreen(
                             .background(VortexPalette.GraphiteRaised, VortexShapes.small)
                             .clickable(onClick = viewModel::consumeError)
                             .padding(10.dp)
+                    )
+                }
+            }
+
+            message?.let { notice ->
+                item {
+                    Text(
+                        text = "$notice · TOCA PARA CERRAR",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VortexPalette.Graphite,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
+                            .background(VortexPalette.Neon, VortexShapes.small)
+                            .clickable(onClick = viewModel::consumeMessage).padding(10.dp)
                     )
                 }
             }
@@ -163,6 +180,21 @@ fun SpotifyHubScreen(
                         HubMetric("PISTAS", tracks.size)
                         HubMetric("EN EL MÓVIL", exact, VortexPalette.Neon)
                         HubMetric("PROBABLES", likely, VortexPalette.Cyan)
+                    }
+                }
+                item {
+                    val matched = tracks.count { it.localMatch != null }
+                    Button(
+                        onClick = viewModel::importCurrentToVortex,
+                        enabled = tracks.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = VortexPalette.Neon,
+                            contentColor = VortexPalette.Graphite
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
+                        Text("IMPORTAR A VÓRTEX · $matched LOCALES · ${tracks.size - matched} FALTAN")
                     }
                 }
                 if (tracks.isEmpty()) {

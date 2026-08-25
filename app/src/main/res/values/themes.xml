@@ -24,4 +24,14 @@
         <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="27">shortEdges</item>
     </style>
 
+    <style name="Theme.Vortex.Cast" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/vortex_neon</item>
+        <item name="colorPrimaryDark">@color/vortex_graphite</item>
+        <item name="colorAccent">@color/vortex_cyan</item>
+        <item name="android:windowBackground">@color/vortex_graphite</item>
+        <item name="android:navigationBarColor">@color/vortex_graphite</item>
+        <item name="android:statusBarColor">@color/vortex_graphite</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
 </resources>

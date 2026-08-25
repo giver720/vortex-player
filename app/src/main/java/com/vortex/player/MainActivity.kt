@@ -21,10 +21,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.vortex.player.popup.PopupService
+import com.vortex.player.playback.PlaybackService
 import com.vortex.player.ui.downloads.DownloadsScreen
 import com.vortex.player.ui.downloads.DownloadsViewModel
 import com.vortex.player.ui.library.LibraryScreen
 import com.vortex.player.ui.library.LibraryViewModel
+import com.vortex.player.ui.network.NetworkSourcesScreen
+import com.vortex.player.ui.network.NetworkSourcesViewModel
 import com.vortex.player.ui.player.PlayerActivity
 import com.vortex.player.ui.settings.SettingsScreen
 import com.vortex.player.ui.settings.SettingsViewModel
@@ -37,9 +40,11 @@ import com.vortex.player.ui.update.UpdateStage
 import com.vortex.player.ui.update.UpdateViewModel
 import com.vortex.player.update.UpdateInstaller
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.util.UnstableApi
 
-private enum class Screen { LIBRARY, DOWNLOADS, SETTINGS, SPOTIFY }
+private enum class Screen { LIBRARY, DOWNLOADS, NETWORK, SETTINGS, SPOTIFY }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 class MainActivity : ComponentActivity() {
 
     private val libraryViewModel: LibraryViewModel by viewModels()
@@ -47,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private val updateViewModel: UpdateViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val spotifyHubViewModel: SpotifyHubViewModel by viewModels()
+    private val networkSourcesViewModel: NetworkSourcesViewModel by viewModels()
 
     /**
      * El permiso de superposición no se concede desde un diálogo normal: hay que mandar
@@ -92,6 +98,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onRequestPopup = ::requestPopup,
                             onOpenDownloads = { screen = Screen.DOWNLOADS },
+                            onOpenNetwork = { screen = Screen.NETWORK },
                             appVersion = updateViewModel.currentVersion,
                             onCheckUpdates = { updateViewModel.check() },
                             onOpenSettings = { screen = Screen.SETTINGS },
@@ -113,6 +120,18 @@ class MainActivity : ComponentActivity() {
                                 viewModel = downloadsViewModel,
                                 onBack = { screen = Screen.LIBRARY },
                                 onPickFolder = { folderLauncher.launch(null) }
+                            )
+                        }
+
+                        Screen.NETWORK -> {
+                            BackHandler { screen = Screen.LIBRARY }
+                            NetworkSourcesScreen(
+                                viewModel = networkSourcesViewModel,
+                                onBack = { screen = Screen.LIBRARY },
+                                onPlay = { entry ->
+                                    PlaybackService.play(this, listOf(entry), 0)
+                                    startActivity(Intent(this, PlayerActivity::class.java))
+                                }
                             )
                         }
 

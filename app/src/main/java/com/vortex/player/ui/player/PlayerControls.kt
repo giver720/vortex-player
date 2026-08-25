@@ -21,7 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -81,6 +82,7 @@ fun ControlsOverlay(
     preset: AspectPreset,
     repeat: RepeatMode,
     shuffle: Boolean,
+    queueCount: Int,
     onBack: () -> Unit,
     onToggleLock: () -> Unit,
     onPlayPause: () -> Unit,
@@ -91,9 +93,11 @@ fun ControlsOverlay(
     onToggleShuffle: () -> Unit,
     onToggleAudioOnly: () -> Unit,
     onOpenAspect: () -> Unit,
+    onOpenQueue: () -> Unit,
     onOpenPanel: (Panel) -> Unit,
     onPip: () -> Unit,
-    onPopup: () -> Unit
+    onPopup: () -> Unit,
+    castButton: @Composable () -> Unit = {}
 ) {
     // Con el candado echado sólo queda el propio candado: es el punto de todo el modo.
     if (locked) {
@@ -147,7 +151,7 @@ fun ControlsOverlay(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = VortexPalette.TextHigh)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver", tint = VortexPalette.TextHigh)
             }
             Column(Modifier.weight(1f)) {
                 Text(
@@ -171,6 +175,27 @@ fun ControlsOverlay(
                         )
                     }
                     SleepBadge()
+                }
+            }
+            castButton()
+            Box {
+                IconButton(onClick = onOpenQueue) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Cola de reproducción, $queueCount elementos",
+                        tint = VortexPalette.TextMid
+                    )
+                }
+                if (queueCount > 0) {
+                    Text(
+                        queueCount.coerceAtMost(99).toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = VortexPalette.Graphite,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .background(VortexPalette.Neon, VortexShapes.extraSmall)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
                 }
             }
             IconButton(onClick = { onOpenPanel(Panel.DIAGNOSTICS) }) {

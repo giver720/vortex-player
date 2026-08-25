@@ -45,6 +45,10 @@
         android:theme="@style/Theme.Vortex.Splash"
         tools:targetApi="34">
 
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.vortex.player.cast.VortexCastOptionsProvider" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -84,6 +88,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".cast.VortexExpandedControlsActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Vortex.Cast" />
+
         <!-- Reproducción en segundo plano: vídeo sonando como si fuera un MP3 -->
         <service
             android:name=".playback.PlaybackService"
@@ -108,6 +118,12 @@
         <!-- Ventana flotante tipo popup por encima de cualquier app -->
         <service
             android:name=".popup.PopupService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Puente HTTP temporal para que Cast pueda leer content:// desde la red local. -->
+        <service
+            android:name=".cast.CastBridgeService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 

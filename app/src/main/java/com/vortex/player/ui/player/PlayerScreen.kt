@@ -1,5 +1,6 @@
 package com.vortex.player.ui.player
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.media.AudioManager
@@ -66,9 +67,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.vortex.player.BuildConfig
+import com.vortex.player.cast.CastCoordinator
+import com.vortex.player.data.MediaRepository
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackDiagnostics
 import com.vortex.player.playback.PlaybackService
@@ -84,6 +86,9 @@ import com.vortex.player.subtitle.SubtitleTextSize
 import com.vortex.player.subtitle.SubtitleTimeline
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.common.rememberPlayerUiState
+import com.vortex.player.ui.cast.CastRouteButton
+import com.vortex.player.ui.cast.RemoteCastOverlay
+import com.vortex.player.ui.queue.PlaybackQueueDialog
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -114,6 +119,7 @@ enum class AspectPreset(val label: String, val forcedRatio: Float?) {
 private data class Feedback(val label: String, val value: Float?, val stamp: Long)
 
 @Composable
+@SuppressLint("UnsafeOptInUsageError")
 fun PlayerScreen(
     inPip: Boolean,
     onBack: () -> Unit,
@@ -124,6 +130,10 @@ fun PlayerScreen(
     val activity = context as? Activity
 
     val player by PlaybackHub.player.collectAsStateWithLifecycle()
+    val queue by PlaybackHub.queue.collectAsStateWithLifecycle()
+    val queueIndex by PlaybackHub.currentIndex.collectAsStateWithLifecycle()
+    val mediaRepository = remember(context) { MediaRepository.get(context) }
+    val library by mediaRepository.library.collectAsStateWithLifecycle()
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
     val emptyDiagnostics = remember { MutableStateFlow(PlaybackDiagnostics()) }
     val diagnostics by (controls?.diagnostics ?: emptyDiagnostics).collectAsStateWithLifecycle()
@@ -131,6 +141,7 @@ fun PlayerScreen(
     val audioOnly by PlaybackHub.audioOnly.collectAsStateWithLifecycle()
     val repeat by PlaybackHub.repeat.collectAsStateWithLifecycle()
     val shuffle by PlaybackHub.shuffle.collectAsStateWithLifecycle()
+    val castState by CastCoordinator.state.collectAsStateWithLifecycle()
     val uiState by rememberPlayerUiState(player)
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -140,6 +151,7 @@ fun PlayerScreen(
     var feedback by remember { mutableStateOf<Feedback?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf<Panel?>(null) }
+    var showQueue by remember { mutableStateOf(false) }
     val subtitleScope = rememberCoroutineScope()
     var primarySubtitleName by remember(entry?.id) { mutableStateOf<String?>(null) }
     var secondarySubtitle by remember(entry?.id) { mutableStateOf<SubtitleDocument?>(null) }
@@ -156,6 +168,13 @@ fun PlayerScreen(
     var onlineSearching by remember { mutableStateOf(false) }
     var onlineDownloadingId by remember { mutableStateOf<Long?>(null) }
     var onlineResults by remember(entry?.id) { mutableStateOf(emptyList<OnlineSubtitleResult>()) }
+
+    LaunchedEffect(castState.connected) {
+        if (castState.connected) {
+            panel = null
+            controlsVisible = true
+        }
+    }
 
     val primarySubtitleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -241,7 +260,7 @@ fun PlayerScreen(
             )
         }
 
-        if (!inPip) {
+        if (!inPip && !castState.connected) {
             GestureLayer(
                 locked = locked,
                 onToggleControls = { controlsVisible = !controlsVisible },
@@ -299,7 +318,9 @@ fun PlayerScreen(
 
         feedback?.let { fb -> FeedbackHud(fb.label, fb.value) }
 
-        if (!inPip) {
+        if (!inPip && castState.connected) {
+            RemoteCastOverlay(state = castState, onBack = onBack)
+        } else if (!inPip) {
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = fadeIn(),
@@ -320,6 +341,7 @@ fun PlayerScreen(
                     preset = preset,
                     repeat = repeat,
                     shuffle = shuffle,
+                    queueCount = queue.size,
                     onBack = onBack,
                     onToggleLock = { locked = !locked },
                     onPlayPause = { PlaybackService.togglePlayPause(context) },
@@ -335,14 +357,16 @@ fun PlayerScreen(
                     onToggleShuffle = { PlaybackService.toggleShuffle() },
                     onToggleAudioOnly = { PlaybackService.setAudioOnly(!audioOnly) },
                     onOpenAspect = { panel = Panel.ASPECT },
+                    onOpenQueue = { showQueue = true },
                     onOpenPanel = { panel = it },
                     onPip = onEnterPip,
-                    onPopup = onRequestPopup
+                    onPopup = onRequestPopup,
+                    castButton = { CastRouteButton() }
                 )
             }
         }
 
-        panel?.let { open ->
+        panel?.takeIf { !castState.connected }?.let { open ->
             PlayerPanel(
                 panel = open,
                 onDismiss = { panel = null },
@@ -508,6 +532,21 @@ fun PlayerScreen(
             )
         }
     }
+
+    if (showQueue) {
+        PlaybackQueueDialog(
+            queue = queue,
+            currentIndex = queueIndex,
+            availableMedia = library.entries,
+            onDismiss = { showQueue = false },
+            onPlay = { PlaybackService.playQueueItem(context, it) },
+            onMove = { from, to -> PlaybackService.moveQueueItem(context, from, to) },
+            onRemove = { PlaybackService.removeQueueItems(context, it) },
+            onAdd = { entries, playNext ->
+                PlaybackService.addToQueue(context, entries, playNext)
+            }
+        )
+    }
 }
 
 @Composable
@@ -553,7 +592,7 @@ private val SUBTITLE_MIME_TYPES = arrayOf(
  * Superficie de vídeo. [AspectRatioFrameLayout] conserva el encuadre elegido y dentro se
  * monta la única salida disponible, [org.videolan.libvlc.util.VLCVideoLayout].
  */
-@OptIn(UnstableApi::class)
+@SuppressLint("UnsafeOptInUsageError")
 @Composable
 private fun VideoSurface(
     audioOnly: Boolean,

@@ -22,8 +22,8 @@ android {
         applicationId = "com.vortex.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.24.1"
+        versionCode = 34
+        versionName = "0.25.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // El Client ID identifica la app y es público. El Client Secret nunca entra al APK:
         // Android autentica con Authorization Code + PKCE.
@@ -115,6 +115,8 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.palette)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.google.play.services.cast.framework)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

@@ -17,6 +17,8 @@
     <string name="popup_channel_name">Ventana flotante</string>
     <string name="playback_channel_name">Reproducción</string>
     <string name="downloads_channel_name">Descargas</string>
+    <string name="cast_bridge_channel_name">Envío a televisión</string>
+    <string name="cast_route_title">Enviar a pantalla</string>
 
     <string name="audio_only_on">Modo solo audio activado</string>
     <string name="audio_only_off">Vídeo restaurado</string>

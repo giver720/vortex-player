@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SpotifyPlaylistEntity::class,
         SpotifyTrackEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -241,6 +241,28 @@ abstract class VortexDatabase : RoomDatabase() {
             }
         }
 
+        /** v11 -> v12 convierte las listas en entidades visuales y conserva metadatos ausentes. */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `description` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `coverUri` TEXT")
+                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `source` TEXT NOT NULL DEFAULT 'LOCAL'")
+                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `smartRule` TEXT")
+                db.execSQL("ALTER TABLE `playlist_items` ADD COLUMN `artist` TEXT")
+                db.execSQL("ALTER TABLE `playlist_items` ADD COLUMN `album` TEXT")
+                db.execSQL("ALTER TABLE `playlist_items` ADD COLUMN `durationMs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `playlist_items` ADD COLUMN `isVideo` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL(
+                    "DELETE FROM `playlist_items` WHERE `id` NOT IN (" +
+                        "SELECT MIN(`id`) FROM `playlist_items` GROUP BY `playlistId`, `uri`)"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_playlist_items_playlistId_uri` ON `playlist_items` (`playlistId`, `uri`)"
+                )
+            }
+        }
+
         fun get(context: Context): VortexDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -251,7 +273,7 @@ abstract class VortexDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
+                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
                     )
                     .build()
                     .also { instance = it }

@@ -29,6 +29,7 @@ import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioPreferences
 import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaRepository
+import com.vortex.player.cast.CastCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -255,7 +256,60 @@ class PlaybackService : MediaSessionService() {
         applyOrder()
         vlcPlayer.setVideoEnabled(!audioOnly)
         vlcPlayer.prepare()
-        vlcPlayer.playWhenReady = true
+        if (CastCoordinator.state.value.connected) {
+            // Al elegir otro medio mientras se está enviando, VLC prepara una copia local
+            // pausada y el receptor recibe la nueva entrada. Así no suenan teléfono y TV.
+            vlcPlayer.playWhenReady = false
+            CastCoordinator.loadCurrent(autoplay = true)
+        } else {
+            vlcPlayer.playWhenReady = true
+        }
+        persistSessionAsync()
+    }
+
+    /** Modifica la cola conservando el medio, la posición y el estado pausa/reproducción. */
+    private fun replaceQueueWithoutRestart(
+        entries: List<MediaEntry>,
+        currentIndex: Int,
+        positionOverrideMs: Long? = null
+    ) {
+        if (entries.isEmpty()) {
+            clearQueue()
+            return
+        }
+        val position = positionOverrideMs ?: vlcPlayer.currentPosition.coerceAtLeast(0L)
+        val wantsPlayback = vlcPlayer.playWhenReady
+        val index = currentIndex.coerceIn(entries.indices)
+        PlaybackHub.setQueue(entries, index, position)
+        vlcPlayer.setMediaItems(entries.map { it.toMediaItem() }, index, position)
+        applyOrder()
+        vlcPlayer.setVideoEnabled(!audioOnly)
+        vlcPlayer.prepare()
+        vlcPlayer.playWhenReady = wantsPlayback && !CastCoordinator.state.value.connected
+        if (CastCoordinator.state.value.connected) CastCoordinator.loadCurrent(autoplay = wantsPlayback)
+        persistSessionAsync()
+    }
+
+    private fun jumpToQueueItem(index: Int) {
+        val queue = PlaybackHub.queue.value
+        if (index !in queue.indices) return
+        PlaybackHub.setQueue(queue, index, 0L)
+        vlcPlayer.seekTo(index, 0L)
+        vlcPlayer.prepare()
+        if (CastCoordinator.state.value.connected) {
+            vlcPlayer.playWhenReady = false
+            CastCoordinator.loadCurrent(autoplay = true)
+        } else {
+            vlcPlayer.play()
+        }
+        persistSessionAsync()
+    }
+
+    private fun clearQueue() {
+        vlcPlayer.stop()
+        vlcPlayer.clearMediaItems()
+        PlaybackHub.setQueue(emptyList(), 0, 0L)
+        if (CastCoordinator.state.value.connected) CastCoordinator.stopRemotePlayback()
         persistSessionAsync()
     }
 
@@ -337,7 +391,7 @@ class PlaybackService : MediaSessionService() {
         audioOnly = enabled
         PlaybackHub.controls.value?.setVideoEnabled(!enabled)
         PlaybackHub.setAudioOnly(enabled)
-        PlaybackHub.currentEntry.value?.let {
+        PlaybackHub.currentEntry.value?.takeIf { it.persistable }?.let {
             repository.savePreferences(it.uri.toString(), audioOnly = enabled)
         }
     }
@@ -370,7 +424,7 @@ class PlaybackService : MediaSessionService() {
                 val player = vlcPlayer
                 val entry = PlaybackHub.currentEntry.value
                 PlaybackHub.setPosition(player.currentPosition)
-                if (entry != null && player.isPlaying && player.duration > 0) {
+                if (entry?.persistable == true && player.isPlaying && player.duration > 0) {
                     repository.savePosition(
                         entry.uri.toString(),
                         player.currentPosition,
@@ -384,7 +438,9 @@ class PlaybackService : MediaSessionService() {
 
     private fun snapshotNow(): PlaybackSessionSnapshot? {
         val entries = PlaybackHub.queue.value
-        if (entries.isEmpty()) return null
+        // Una URL firmada o con credenciales puede vivir en memoria mientras se reproduce,
+        // pero no debe terminar en playback-session.json ni en las preferencias de medios.
+        if (entries.isEmpty() || entries.any { !it.persistable }) return null
         return PlaybackSessionSnapshot(
             entries = entries.map { it.toPersisted() },
             currentIndex = vlcPlayer.currentMediaItemIndex
@@ -417,7 +473,7 @@ class PlaybackService : MediaSessionService() {
         // reanudar continúe donde estaba en vez de empezar de cero.
         PlaybackHub.setPosition(player.currentPosition)
         val entry = PlaybackHub.currentEntry.value
-        if (entry != null && player.duration > 0) {
+        if (entry?.persistable == true && player.duration > 0) {
             repository.savePosition(entry.uri.toString(), player.currentPosition, player.duration)
         }
         snapshotNow()?.let { runCatching { sessionStore.save(it) } }
@@ -564,6 +620,83 @@ class PlaybackService : MediaSessionService() {
         fun togglePlayPause(context: Context) {
             val player = PlaybackHub.player.value
             if (player != null && player.isPlaying) player.pause() else resume(context)
+        }
+
+        /** Añade elementos sin reemplazar la reproducción actual. */
+        fun addToQueue(context: Context, entries: List<MediaEntry>, playNext: Boolean = false) {
+            if (entries.isEmpty()) return
+            val current = PlaybackHub.queue.value
+            if (current.isEmpty()) {
+                play(context, entries, 0)
+                return
+            }
+            val index = PlaybackHub.currentIndex.value.coerceIn(current.indices)
+            val insertAt = if (playNext) index + 1 else current.size
+            val updated = current.toMutableList().apply { addAll(insertAt, entries) }
+            val service = instance
+            if (service != null) {
+                service.replaceQueueWithoutRestart(updated, index)
+            } else {
+                PlaybackHub.setQueue(updated, index, PlaybackHub.positionMs.value)
+            }
+        }
+
+        /** Salta a un elemento de la cola sin crear una cola distinta. */
+        fun playQueueItem(context: Context, index: Int) {
+            val queue = PlaybackHub.queue.value
+            if (index !in queue.indices) return
+            val service = instance
+            if (service != null) service.jumpToQueueItem(index)
+            else play(context, queue, index)
+        }
+
+        /** Reordena una entrada y mantiene señalada la misma que estaba sonando. */
+        fun moveQueueItem(context: Context, fromIndex: Int, toIndex: Int) {
+            val result = PlaybackQueueEditor.move(
+                entries = PlaybackHub.queue.value,
+                currentIndex = PlaybackHub.currentIndex.value,
+                fromIndex = fromIndex,
+                toIndex = toIndex
+            )
+            if (result.entries.isEmpty()) return
+            val service = instance
+            if (service != null) {
+                service.replaceQueueWithoutRestart(result.entries, result.currentIndex)
+            } else {
+                PlaybackHub.setQueue(
+                    result.entries,
+                    result.currentIndex,
+                    PlaybackHub.positionMs.value
+                )
+            }
+        }
+
+        /** Quita una o varias posiciones. Si se quita la actual, continúa con la siguiente. */
+        fun removeQueueItems(context: Context, indices: Set<Int>) {
+            val result = PlaybackQueueEditor.remove(
+                entries = PlaybackHub.queue.value,
+                currentIndex = PlaybackHub.currentIndex.value,
+                rawIndices = indices
+            )
+            val service = instance
+            if (result.entries.isEmpty()) {
+                if (service != null) service.clearQueue()
+                else PlaybackHub.setQueue(emptyList(), 0, 0L)
+                return
+            }
+            if (service != null) {
+                service.replaceQueueWithoutRestart(
+                    result.entries,
+                    result.currentIndex,
+                    positionOverrideMs = if (result.currentRemoved) 0L else null
+                )
+            } else {
+                PlaybackHub.setQueue(
+                    result.entries,
+                    result.currentIndex,
+                    if (result.currentRemoved) 0L else PlaybackHub.positionMs.value
+                )
+            }
         }
 
         fun play(

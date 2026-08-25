@@ -1,6 +1,8 @@
 package com.vortex.player.ui.library
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -61,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,19 +77,24 @@ import com.vortex.player.data.MediaEntry
 import com.vortex.player.data.MediaScanReport
 import com.vortex.player.data.SortField
 import com.vortex.player.data.ViewMode
+import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.playback.PlaybackService
 import com.vortex.player.ui.common.formatSize
+import com.vortex.player.ui.queue.PlaybackQueueDialog
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 import java.util.Locale
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
+@SuppressLint("UnsafeOptInUsageError")
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
     onOpenPlayer: () -> Unit,
     onRequestPopup: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenNetwork: () -> Unit = {},
     appVersion: String = "",
     onCheckUpdates: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
@@ -109,8 +118,53 @@ fun LibraryScreen(
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val lastScan by viewModel.lastScan.collectAsStateWithLifecycle()
+    val queue by PlaybackHub.queue.collectAsStateWithLifecycle()
+    val queueIndex by PlaybackHub.currentIndex.collectAsStateWithLifecycle()
+    val playlistUndoAvailable by viewModel.playlistUndoAvailable.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     var showPlaylistDialog by remember { mutableStateOf(false) }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var showCreateSmartPlaylist by remember { mutableStateOf(false) }
+    var showSaveQueue by remember { mutableStateOf(false) }
+    var showPlaybackQueue by remember { mutableStateOf(false) }
+    var showQueueSelectionActions by remember { mutableStateOf(false) }
+    var pickerPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var editingPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var deletingPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var exportingPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var pendingCover by remember { mutableStateOf<String?>(null) }
+
+    val importM3uLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(viewModel::importM3u) }
+    val exportM3uLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri ->
+        val id = exportingPlaylistId
+        exportingPlaylistId = null
+        if (uri != null && id != null) viewModel.exportM3u(id, uri)
+    }
+    val coverLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            pendingCover = uri.toString()
+        }
+    }
+
+    fun exportPlaylist(id: Long) {
+        val playlist = playlists.firstOrNull { it.playlist.id == id }?.playlist ?: return
+        exportingPlaylistId = id
+        val safe = playlist.name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "playlist" }
+        exportM3uLauncher.launch("$safe.m3u8")
+    }
 
     // El borrado lo confirma el sistema con su propio diálogo; aquí sólo se lanza y se
     // espera el resultado para refrescar la biblioteca.
@@ -159,7 +213,7 @@ fun LibraryScreen(
                     count = selection.size,
                     onClose = viewModel::clearSelection,
                     onSelectAll = { viewModel.selectAll(visible) },
-                    onQueue = viewModel::queueSelection,
+                    onQueue = { showQueueSelectionActions = true },
                     onFavorite = viewModel::favoriteSelection,
                     onAddToPlaylist = { showPlaylistDialog = true },
                     onShare = viewModel::shareSelection,
@@ -170,6 +224,7 @@ fun LibraryScreen(
                     onSearch = viewModel::openSearch,
                     onRefresh = viewModel::refresh,
                     onOpenDownloads = onOpenDownloads,
+                    onOpenNetwork = onOpenNetwork,
                     appVersion = appVersion,
                     onCheckUpdates = onCheckUpdates,
                     autoRefresh = prefs.autoRefresh,
@@ -188,9 +243,11 @@ fun LibraryScreen(
 
             val showingTree = tab == LibraryTab.FOLDERS && openFolder == null
             val showingPlaylistIndex = tab == LibraryTab.PLAYLISTS && openPlaylist == null
+            val showingPlaylistEditor = tab == LibraryTab.PLAYLISTS &&
+                openPlaylist != null && openPlaylist != LibraryViewModel.FAVORITES_ID
             val showingSmart = tab == LibraryTab.SMART
 
-            if (!showingTree && !showingPlaylistIndex && !showingSmart) {
+            if (!showingTree && !showingPlaylistIndex && !showingPlaylistEditor && !showingSmart) {
                 SortAndViewBar(
                     sortField = prefs.sortField,
                     descending = prefs.descending,
@@ -231,12 +288,71 @@ fun LibraryScreen(
 
                 showingPlaylistIndex -> PlaylistsIndex(
                     playlists = playlists,
+                    library = library,
                     favoritesCount = library.favorites.size,
+                    queueCount = queue.size,
                     onOpen = viewModel::openPlaylist,
-                    onDelete = viewModel::deletePlaylist,
-                    onCreate = { showPlaylistDialog = true },
+                    onPlay = viewModel::playPlaylist,
+                    onPlayNext = { viewModel.addPlaylistToQueue(it, playNext = true) },
+                    onAddQueue = { viewModel.addPlaylistToQueue(it, playNext = false) },
+                    onEdit = {
+                        pendingCover = null
+                        editingPlaylistId = it
+                    },
+                    onExport = ::exportPlaylist,
+                    onDelete = { deletingPlaylistId = it },
+                    onCreate = { showCreatePlaylist = true },
+                    onCreateSmart = { showCreateSmartPlaylist = true },
+                    onImport = {
+                        importM3uLauncher.launch(
+                            arrayOf(
+                                "audio/x-mpegurl",
+                                "application/vnd.apple.mpegurl",
+                                "application/x-mpegurl",
+                                "text/plain"
+                            )
+                        )
+                    },
+                    onSaveQueue = { showSaveQueue = true },
                     contentPadding = PaddingValues(top = 4.dp, bottom = bottomPadding)
                 )
+
+                showingPlaylistEditor -> {
+                    playlists.firstOrNull { it.playlist.id == openPlaylist }?.let { current ->
+                        PlaylistEditor(
+                            playlist = current,
+                            library = library,
+                            contentPadding = PaddingValues(bottom = bottomPadding),
+                            undoAvailable = playlistUndoAvailable &&
+                                viewModel.canUndoPlaylistRemoval(current.playlist.id),
+                            onBack = { viewModel.openPlaylist(null) },
+                            onPlayAll = { viewModel.playPlaylist(current.playlist.id, it) },
+                            onPlayEntry = { entry, entries ->
+                                viewModel.play(entry, entries)
+                                onOpenPlayer()
+                            },
+                            onAdd = { pickerPlaylistId = current.playlist.id },
+                            onEdit = {
+                                pendingCover = null
+                                editingPlaylistId = current.playlist.id
+                            },
+                            onExport = { exportPlaylist(current.playlist.id) },
+                            onPlayNext = {
+                                viewModel.addPlaylistToQueue(current.playlist.id, playNext = true)
+                            },
+                            onAddQueue = {
+                                viewModel.addPlaylistToQueue(current.playlist.id, playNext = false)
+                            },
+                            onSort = { viewModel.sortPlaylist(current.playlist.id, it) },
+                            onRemoveMissing = { viewModel.removeUnavailable(current.playlist.id) },
+                            onRemove = { viewModel.removePlaylistItems(current.playlist.id, it) },
+                            onMove = { itemId, direction ->
+                                viewModel.movePlaylistItem(current.playlist.id, itemId, direction)
+                            },
+                            onUndo = viewModel::undoPlaylistRemoval
+                        )
+                    }
+                }
 
                 showingSmart -> SmartLibraryView(
                     intelligence = viewModel.intelligence(library),
@@ -256,14 +372,11 @@ fun LibraryScreen(
                             onNavigate = viewModel::openFolder
                         )
                     }
-                    if (tab == LibraryTab.PLAYLISTS && openPlaylist != null) {
+                    if (tab == LibraryTab.PLAYLISTS &&
+                        openPlaylist == LibraryViewModel.FAVORITES_ID
+                    ) {
                         PlaylistHeader(
-                            name = if (openPlaylist == LibraryViewModel.FAVORITES_ID) {
-                                "Favoritos"
-                            } else {
-                                playlists.firstOrNull { it.playlist.id == openPlaylist }
-                                    ?.playlist?.name.orEmpty()
-                            },
+                            name = "Favoritos",
                             count = visible.size,
                             onBack = { viewModel.openPlaylist(null) },
                             onPlayAll = {
@@ -298,6 +411,7 @@ fun LibraryScreen(
         NowPlayingDock(
             onExpand = onOpenPlayer,
             onRequestPopup = onRequestPopup,
+            onOpenQueue = { showPlaybackQueue = true },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
@@ -338,6 +452,39 @@ fun LibraryScreen(
         )
     }
 
+    if (showQueueSelectionActions) {
+        QueueSelectionDialog(
+            count = selection.size,
+            queueIsEmpty = queue.isEmpty(),
+            onDismiss = { showQueueSelectionActions = false },
+            onPlayNow = {
+                showQueueSelectionActions = false
+                viewModel.playSelection(visible)
+            },
+            onPlayNext = {
+                showQueueSelectionActions = false
+                viewModel.addSelectionToQueue(playNext = true, order = visible)
+            },
+            onAddToEnd = {
+                showQueueSelectionActions = false
+                viewModel.addSelectionToQueue(playNext = false, order = visible)
+            }
+        )
+    }
+
+    if (showPlaybackQueue) {
+        PlaybackQueueDialog(
+            queue = queue,
+            currentIndex = queueIndex,
+            availableMedia = library.entries,
+            onDismiss = { showPlaybackQueue = false },
+            onPlay = { PlaybackService.playQueueItem(context, it) },
+            onMove = { from, to -> PlaybackService.moveQueueItem(context, from, to) },
+            onRemove = { PlaybackService.removeQueueItems(context, it) },
+            onAdd = viewModel::addEntriesToQueue
+        )
+    }
+
     if (showPlaylistDialog) {
         AddToPlaylistDialog(
             playlists = playlists,
@@ -351,6 +498,88 @@ fun LibraryScreen(
                 showPlaylistDialog = false
             }
         )
+    }
+
+    if (showCreatePlaylist) {
+        PlaylistNameDialog(
+            title = "NUEVA PLAYLIST",
+            onDismiss = { showCreatePlaylist = false },
+            onConfirm = { name ->
+                viewModel.createPlaylist(name, withSelection = false)
+                showCreatePlaylist = false
+            }
+        )
+    }
+
+    if (showCreateSmartPlaylist) {
+        SmartPlaylistDialog(
+            onDismiss = { showCreateSmartPlaylist = false },
+            onConfirm = { name, rule ->
+                viewModel.createSmartPlaylist(name, rule)
+                showCreateSmartPlaylist = false
+            }
+        )
+    }
+
+    if (showSaveQueue) {
+        PlaylistNameDialog(
+            title = "GUARDAR COLA COMO PLAYLIST",
+            initial = "Cola ${java.text.SimpleDateFormat("dd-MM HH-mm", Locale.getDefault()).format(java.util.Date())}",
+            onDismiss = { showSaveQueue = false },
+            onConfirm = { name ->
+                viewModel.saveCurrentQueue(name)
+                showSaveQueue = false
+            }
+        )
+    }
+
+    pickerPlaylistId?.let { id ->
+        val current = playlists.firstOrNull { it.playlist.id == id }
+        if (current != null) {
+            PlaylistMediaPickerDialog(
+                library = library.entries,
+                existingUris = current.items.map { it.uri }.toSet(),
+                onDismiss = { pickerPlaylistId = null },
+                onAdd = { entries ->
+                    viewModel.addEntriesToPlaylist(id, entries)
+                    pickerPlaylistId = null
+                }
+            )
+        }
+    }
+
+    editingPlaylistId?.let { id ->
+        playlists.firstOrNull { it.playlist.id == id }?.playlist?.let { playlist ->
+            PlaylistDetailsDialog(
+                playlist = playlist,
+                pendingCover = pendingCover,
+                onDismiss = {
+                    editingPlaylistId = null
+                    pendingCover = null
+                },
+                onChooseCover = { coverLauncher.launch(arrayOf("image/*")) },
+                onRemoveCover = { pendingCover = "" },
+                onSave = { name, description, cover ->
+                    viewModel.updatePlaylistDetails(id, name, description, cover)
+                    editingPlaylistId = null
+                    pendingCover = null
+                }
+            )
+        }
+    }
+
+    deletingPlaylistId?.let { id ->
+        val playlist = playlists.firstOrNull { it.playlist.id == id }?.playlist
+        if (playlist != null) {
+            DeletePlaylistDialog(
+                name = playlist.name,
+                onDismiss = { deletingPlaylistId = null },
+                onConfirm = {
+                    viewModel.deletePlaylist(id)
+                    deletingPlaylistId = null
+                }
+            )
+        }
     }
 }
 
@@ -451,6 +680,7 @@ private fun VortexHeader(
     onSearch: () -> Unit,
     onRefresh: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenNetwork: () -> Unit,
     appVersion: String,
     onCheckUpdates: () -> Unit,
     autoRefresh: Boolean,
@@ -496,6 +726,33 @@ private fun VortexHeader(
                 onDismissRequest = { menuOpen = false },
                 containerColor = VortexPalette.GraphiteRaised
             ) {
+                DropdownMenuItem(
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.LiveTv,
+                            contentDescription = null,
+                            tint = VortexPalette.Cyan
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Fuentes de red",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = VortexPalette.TextHigh
+                            )
+                            Text(
+                                "HTTP, HLS, RTSP, cámaras y radio",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = VortexPalette.TextLow
+                            )
+                        }
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onOpenNetwork()
+                    }
+                )
                 DropdownMenuItem(
                     leadingIcon = {
                         Icon(

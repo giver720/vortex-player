@@ -1,8 +1,10 @@
 package com.vortex.player.ui.library
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Intent
 import android.content.IntentSender
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vortex.player.data.LibraryPreferences
@@ -19,18 +21,27 @@ import com.vortex.player.data.DurationFilter
 import com.vortex.player.data.ResolutionFilter
 import com.vortex.player.data.SizeFilter
 import com.vortex.player.data.PlaylistWithItems
+import com.vortex.player.data.M3uCodec
+import com.vortex.player.data.PlaylistOrganizer
+import com.vortex.player.data.PlaylistResolvedItem
+import com.vortex.player.data.PlaylistSortMode
+import com.vortex.player.data.SmartPlaylistRule
 import com.vortex.player.data.SearchResults
 import com.vortex.player.data.SortField
 import com.vortex.player.data.ViewMode
 import com.vortex.player.data.searchLibrary
 import com.vortex.player.data.sortedBy
 import com.vortex.player.playback.PlaybackService
+import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.data.db.PlaylistItemEntity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class LibraryTab(val label: String) {
     ALL("TODO"),
@@ -41,6 +52,7 @@ enum class LibraryTab(val label: String) {
     SMART("SMART")
 }
 
+@SuppressLint("UnsafeOptInUsageError")
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = MediaRepository.get(app)
@@ -83,6 +95,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /** Lista abierta en la pestaña LISTAS; `null` muestra el índice de listas. */
     private val _openPlaylist = MutableStateFlow<Long?>(null)
     val openPlaylist: StateFlow<Long?> = _openPlaylist.asStateFlow()
+
+    private val _playlistUndoAvailable = MutableStateFlow(false)
+    val playlistUndoAvailable: StateFlow<Boolean> = _playlistUndoAvailable.asStateFlow()
+    private var removedPlaylistItems: Pair<Long, List<PlaylistItemEntity>>? = null
 
     /** Diálogo de confirmación del sistema pendiente de lanzar tras un borrado. */
     private val _deleteRequest = MutableStateFlow<IntentSender?>(null)
@@ -235,10 +251,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSelection() { _selection.value = emptySet() }
 
-    fun selectedEntries(): List<MediaEntry> {
-        val state = library.value
-        return _selection.value.mapNotNull { state.entryFor(it) }
-    }
+    fun selectedEntries(order: List<MediaEntry> = library.value.entries): List<MediaEntry> =
+        order.filter { it.uri.toString() in _selection.value }
 
     fun favoriteSelection() {
         val entries = selectedEntries()
@@ -250,13 +264,36 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         clearSelection()
     }
 
-    fun queueSelection() {
-        val entries = selectedEntries()
+    fun playSelection(order: List<MediaEntry> = library.value.entries) {
+        val entries = selectedEntries(order)
         if (entries.isEmpty()) return
         PlaybackService.play(getApplication(), entries, 0)
-        _message.value = "${entries.size} en la cola"
+        _message.value = "Reproduciendo ${entries.size} archivos seleccionados"
         clearSelection()
     }
+
+    fun addSelectionToQueue(
+        playNext: Boolean,
+        order: List<MediaEntry> = library.value.entries
+    ) {
+        val entries = selectedEntries(order)
+        if (entries.isEmpty()) return
+        addEntriesToQueue(entries, playNext)
+        clearSelection()
+    }
+
+    fun addEntriesToQueue(entries: List<MediaEntry>, playNext: Boolean) {
+        if (entries.isEmpty()) return
+        PlaybackService.addToQueue(getApplication(), entries, playNext)
+        _message.value = if (playNext) {
+            "${entries.size} se reproducirán a continuación"
+        } else {
+            "${entries.size} añadidos al final de la cola"
+        }
+    }
+
+    /** Compatibilidad con superficies antiguas: reproducir la selección crea una cola. */
+    fun queueSelection() = playSelection()
 
     fun shareSelection() {
         val entries = selectedEntries()
@@ -303,9 +340,13 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createPlaylist(name: String, withSelection: Boolean) {
         if (name.isBlank()) return
-        repository.createPlaylist(name, if (withSelection) selectedEntries() else emptyList())
-        _message.value = "Lista «$name» creada"
-        clearSelection()
+        val initial = if (withSelection) selectedEntries() else emptyList()
+        viewModelScope.launch {
+            val id = repository.createPlaylistNow(name, initial)
+            _message.value = "Lista «$name» creada"
+            clearSelection()
+            if (!withSelection && _tab.value == LibraryTab.PLAYLISTS) _openPlaylist.value = id
+        }
     }
 
     fun addSelectionToPlaylist(playlistId: Long) {
@@ -318,6 +359,10 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deletePlaylist(id: Long) {
         repository.deletePlaylist(id)
+        if (removedPlaylistItems?.first == id) {
+            removedPlaylistItems = null
+            _playlistUndoAvailable.value = false
+        }
         if (_openPlaylist.value == id) _openPlaylist.value = null
     }
 
@@ -325,6 +370,169 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeFromPlaylist(playlistId: Long, uri: String) =
         repository.removeFromPlaylist(playlistId, uri)
+
+    fun updatePlaylistDetails(id: Long, name: String, description: String, coverUri: String?) {
+        if (name.isBlank()) return
+        repository.updatePlaylistDetails(id, name, description, coverUri)
+        _message.value = "Playlist actualizada"
+    }
+
+    fun resolvedPlaylist(id: Long): List<PlaylistResolvedItem> {
+        val list = playlists.value.firstOrNull { it.playlist.id == id } ?: return emptyList()
+        return PlaylistOrganizer.resolve(list, library.value)
+    }
+
+    fun createSmartPlaylist(name: String, rule: SmartPlaylistRule) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val id = repository.createSmartPlaylist(name, rule)
+            _openPlaylist.value = id
+            _message.value = "Playlist inteligente creada"
+        }
+    }
+
+    fun playPlaylist(id: Long, shuffled: Boolean = false) {
+        val available = resolvedPlaylist(id).mapNotNull { it.media }
+        if (available.isEmpty()) {
+            _message.value = "La playlist no tiene archivos disponibles"
+            return
+        }
+        val queue = if (shuffled) available.shuffled() else available
+        PlaybackService.play(getApplication(), queue, 0)
+    }
+
+    fun addPlaylistToQueue(id: Long, playNext: Boolean) {
+        val available = resolvedPlaylist(id).mapNotNull { it.media }
+        if (available.isEmpty()) {
+            _message.value = "No hay archivos disponibles para añadir"
+            return
+        }
+        PlaybackService.addToQueue(getApplication(), available, playNext)
+        _message.value = if (playNext) {
+            "${available.size} pistas reproducirán después"
+        } else {
+            "${available.size} pistas añadidas a la cola"
+        }
+    }
+
+    fun saveCurrentQueue(name: String) {
+        if (name.isBlank()) return
+        val queue = PlaybackHub.queue.value
+        if (queue.isEmpty()) {
+            _message.value = "La cola está vacía"
+            return
+        }
+        viewModelScope.launch {
+            val id = repository.createPlaylistNow(name, queue, source = "QUEUE")
+            _message.value = "Cola guardada como «$name»"
+            _openPlaylist.value = id
+        }
+    }
+
+    fun addEntriesToPlaylist(id: Long, entries: List<MediaEntry>) {
+        if (entries.isEmpty()) return
+        repository.addToPlaylist(id, entries)
+        _message.value = "${entries.size} añadidos"
+    }
+
+    fun removePlaylistItems(id: Long, itemIds: List<Long>) {
+        val removed = playlists.value.firstOrNull { it.playlist.id == id }
+            ?.items?.filter { it.id in itemIds }.orEmpty()
+        if (removed.isEmpty()) return
+        removedPlaylistItems = id to removed
+        _playlistUndoAvailable.value = true
+        repository.removeFromPlaylist(id, removed.map { it.id })
+        _message.value = if (removed.size == 1) "Pista quitada" else "${removed.size} pistas quitadas"
+    }
+
+    fun undoPlaylistRemoval() {
+        val (id, items) = removedPlaylistItems ?: return
+        repository.restorePlaylistItems(id, items)
+        removedPlaylistItems = null
+        _playlistUndoAvailable.value = false
+        _message.value = "Cambio deshecho"
+    }
+
+    fun canUndoPlaylistRemoval(id: Long): Boolean = removedPlaylistItems?.first == id
+
+    fun removeUnavailable(id: Long) {
+        if (playlists.value.firstOrNull { it.playlist.id == id }?.playlist?.smartRule != null) return
+        val missing = resolvedPlaylist(id).filterNot { it.available }.map { it.stored.id }
+        if (missing.isEmpty()) {
+            _message.value = "No hay elementos ausentes"
+        } else {
+            removePlaylistItems(id, missing)
+        }
+    }
+
+    fun sortPlaylist(id: Long, mode: PlaylistSortMode) {
+        if (playlists.value.firstOrNull { it.playlist.id == id }?.playlist?.smartRule != null) return
+        val resolved = resolvedPlaylist(id)
+        repository.reorderPlaylist(id, PlaylistOrganizer.sortedIds(resolved, mode))
+        _message.value = "Playlist ordenada por ${mode.name.lowercase()}"
+    }
+
+    fun movePlaylistItem(id: Long, itemId: Long, direction: Int) {
+        val ids = playlists.value.firstOrNull { it.playlist.id == id }
+            ?.items?.sortedBy { it.position }?.map { it.id }.orEmpty()
+        val from = ids.indexOf(itemId)
+        if (from < 0) return
+        val to = (from + direction).coerceIn(ids.indices)
+        if (from != to) {
+            repository.reorderPlaylist(id, PlaylistOrganizer.move(ids, from, to))
+        }
+    }
+
+    fun reorderPlaylist(id: Long, orderedIds: List<Long>) {
+        repository.reorderPlaylist(id, orderedIds)
+    }
+
+    fun importM3u(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val text = withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openInputStream(uri)
+                        ?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                            buildString {
+                                val buffer = CharArray(8_192)
+                                while (length < MAX_M3U_CHARS) {
+                                    val count = reader.read(buffer, 0, minOf(buffer.size, MAX_M3U_CHARS - length))
+                                    if (count < 0) break
+                                    append(buffer, 0, count)
+                                }
+                            }
+                        } ?: error("No se pudo abrir el archivo")
+                }
+                val document = M3uCodec.decode(text)
+                require(document.entries.isNotEmpty()) { "La lista está vacía" }
+                val fallback = uri.lastPathSegment?.substringAfterLast('/')
+                    ?.substringBeforeLast('.')?.takeIf { it.isNotBlank() } ?: "Playlist importada"
+                val id = repository.createPlaylistFromDrafts(
+                    name = document.name ?: fallback,
+                    entries = M3uCodec.toDrafts(document, library.value),
+                    source = "M3U",
+                    description = "Importada desde M3U/M3U8"
+                )
+                _openPlaylist.value = id
+                _message.value = "${document.entries.size} elementos importados"
+            }.onFailure { _message.value = it.message ?: "No se pudo importar la playlist" }
+        }
+    }
+
+    fun exportM3u(id: Long, uri: Uri) {
+        val list = playlists.value.firstOrNull { it.playlist.id == id } ?: return
+        val text = M3uCodec.encode(list.playlist.name, resolvedPlaylist(id))
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                        ?.bufferedWriter(Charsets.UTF_8)?.use { it.write(text) }
+                        ?: error("No se pudo crear el archivo")
+                }
+                _message.value = "Playlist exportada"
+            }.onFailure { _message.value = it.message ?: "No se pudo exportar" }
+        }
+    }
 
     fun toggleFavorite(entry: MediaEntry) = repository.toggleFavorite(entry.uri.toString())
 
@@ -394,5 +602,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         /** Identificador reservado para la lista sintética de favoritos. */
         const val FAVORITES_ID = -1L
+        private const val MAX_M3U_CHARS = 8 * 1024 * 1024
     }
 }

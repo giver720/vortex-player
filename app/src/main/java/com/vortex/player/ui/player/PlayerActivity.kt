@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -19,13 +18,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.FragmentActivity
 import com.vortex.player.data.MediaEntry
+import com.vortex.player.network.NetworkSourceParseResult
+import com.vortex.player.network.NetworkSourceParser
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackService
 import com.vortex.player.popup.PopupService
 import com.vortex.player.ui.theme.VortexTheme
 
-class PlayerActivity : ComponentActivity() {
+class PlayerActivity : FragmentActivity() {
 
     private val inPip = mutableStateOf(false)
 
@@ -71,6 +73,8 @@ class PlayerActivity : ComponentActivity() {
 
     private fun externalEntry(uri: Uri, mime: String?): MediaEntry {
         val name = uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+        val networkDraft = (NetworkSourceParser.parse(uri.toString(), name)
+            as? NetworkSourceParseResult.Valid)?.draft
         return MediaEntry(
             id = uri.hashCode().toLong(),
             uri = uri,
@@ -86,7 +90,8 @@ class PlayerActivity : ComponentActivity() {
             dateAddedSec = System.currentTimeMillis() / 1000,
             // Sin metadatos fiables asumimos vídeo: si resulta ser audio, el motor
             // simplemente no entrega imagen y la UI ya contempla ese caso.
-            isVideo = mime?.startsWith("audio/") != true
+            isVideo = mime?.startsWith("audio/") != true,
+            persistable = networkDraft?.canPersist ?: true
         )
     }
 

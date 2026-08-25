@@ -10,6 +10,7 @@ import coil.ImageLoaderFactory
 import coil.decode.VideoFrameDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.vortex.player.cast.CastCoordinator
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackSessionStore
 import com.vortex.player.playback.toMediaEntry
@@ -25,6 +26,7 @@ class VortexApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        CastCoordinator.initialize(this)
         restorePlaybackSession()
     }
 

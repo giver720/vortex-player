@@ -23,7 +23,9 @@ data class MediaEntry(
     val dateModifiedSec: Long = dateAddedSec,
     val isVideo: Boolean,
     val artist: String? = null,
-    val album: String? = null
+    val album: String? = null,
+    /** `false` para URLs temporales con credenciales o tokens que no deben tocar disco. */
+    val persistable: Boolean = true
 ) {
     val hasVideoTrack: Boolean get() = isVideo && width > 0 && height > 0
 

@@ -12,12 +12,14 @@ import com.vortex.player.data.db.MediaStateEntity
 import com.vortex.player.data.db.PlaylistDao
 import com.vortex.player.data.db.PlaylistEntity
 import com.vortex.player.data.db.PlaylistItemEntity
+import com.vortex.player.data.db.PlaylistItemDraft
 import com.vortex.player.data.db.VortexDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.debounce
@@ -77,6 +79,16 @@ data class PlaylistWithItems(
     val items: List<PlaylistItemEntity>
 )
 
+fun MediaEntry.toPlaylistDraft(): PlaylistItemDraft = PlaylistItemDraft(
+    uri = uri.toString(),
+    title = title.ifBlank { displayName },
+    artist = artist,
+    album = album,
+    durationMs = durationMs,
+    isVideo = isVideo
+)
+
+@OptIn(FlowPreview::class)
 class MediaRepository(
     private val context: Context,
     private val dao: MediaStateDao,
@@ -175,23 +187,93 @@ class MediaRepository(
 
     // ------------------------------------------------------------ listas
 
-    fun createPlaylist(name: String, initial: List<MediaEntry> = emptyList()) {
+    fun createPlaylist(
+        name: String,
+        initial: List<MediaEntry> = emptyList(),
+        source: String = "LOCAL"
+    ) {
         scope.launch {
-            val id = playlistDao.insertPlaylist(PlaylistEntity(name = name.trim()))
-            if (initial.isNotEmpty()) {
-                playlistDao.append(id, initial.map { it.uri.toString() to it.title })
-            }
+            createPlaylistNow(name, initial, source)
         }
     }
+
+    suspend fun createPlaylistNow(
+        name: String,
+        initial: List<MediaEntry> = emptyList(),
+        source: String = "LOCAL"
+    ): Long {
+        val id = playlistDao.insertPlaylist(PlaylistEntity(name = name.trim(), source = source))
+        if (initial.isNotEmpty()) {
+            playlistDao.append(id, initial.map(MediaEntry::toPlaylistDraft))
+        }
+        return id
+    }
+
+    suspend fun createPlaylistFromDrafts(
+        name: String,
+        entries: List<PlaylistItemDraft>,
+        source: String,
+        description: String = ""
+    ): Long {
+        val id = playlistDao.insertPlaylist(
+            PlaylistEntity(name = name.trim(), description = description.trim(), source = source)
+        )
+        if (entries.isNotEmpty()) {
+            playlistDao.append(id, entries)
+        }
+        return id
+    }
+
+    suspend fun createSmartPlaylist(name: String, rule: SmartPlaylistRule): Long =
+        playlistDao.insertPlaylist(
+            PlaylistEntity(
+                name = name.trim(),
+                description = rule.description,
+                source = "SMART",
+                smartRule = rule.name
+            )
+        )
 
     fun addToPlaylist(playlistId: Long, entries: List<MediaEntry>) {
         scope.launch {
-            playlistDao.append(playlistId, entries.map { it.uri.toString() to it.title })
+            playlistDao.append(playlistId, entries.map(MediaEntry::toPlaylistDraft))
         }
     }
 
+    fun removeFromPlaylist(playlistId: Long, itemIds: List<Long>) {
+        scope.launch { playlistDao.removeAndTouch(playlistId, itemIds) }
+    }
+
     fun removeFromPlaylist(playlistId: Long, uri: String) {
-        scope.launch { playlistDao.removeItem(playlistId, uri) }
+        val ids = playlists.value.firstOrNull { it.playlist.id == playlistId }
+            ?.items?.filter { it.uri == uri }?.map { it.id }.orEmpty()
+        removeFromPlaylist(playlistId, ids)
+    }
+
+    fun restorePlaylistItem(playlistId: Long, item: PlaylistItemEntity) {
+        scope.launch {
+            playlistDao.restore(
+                playlistId,
+                PlaylistItemDraft(
+                    item.uri, item.title, item.artist, item.album, item.durationMs, item.isVideo
+                ),
+                item.position
+            )
+        }
+    }
+
+    fun restorePlaylistItems(playlistId: Long, items: List<PlaylistItemEntity>) {
+        scope.launch {
+            items.sortedBy { it.position }.forEach { item ->
+                playlistDao.restore(
+                    playlistId,
+                    PlaylistItemDraft(
+                        item.uri, item.title, item.artist, item.album, item.durationMs, item.isVideo
+                    ),
+                    item.position
+                )
+            }
+        }
     }
 
     fun deletePlaylist(playlistId: Long) {
@@ -202,8 +284,19 @@ class MediaRepository(
         scope.launch { playlistDao.rename(playlistId, name.trim()) }
     }
 
-    fun reorderPlaylist(playlistId: Long, orderedUris: List<String>) {
-        scope.launch { playlistDao.reorder(playlistId, orderedUris) }
+    fun updatePlaylistDetails(
+        playlistId: Long,
+        name: String,
+        description: String,
+        coverUri: String?
+    ) {
+        scope.launch {
+            playlistDao.updateDetails(playlistId, name.trim(), description.trim(), coverUri)
+        }
+    }
+
+    fun reorderPlaylist(playlistId: Long, orderedItemIds: List<Long>) {
+        scope.launch { playlistDao.reorder(playlistId, orderedItemIds) }
     }
 
     fun setFavorite(uri: String, favorite: Boolean) {
