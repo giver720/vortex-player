@@ -94,6 +94,8 @@ class VlcPlayer(
     private var lastDisplayedPictures = 0
     private var voutCount = 0
     private var seekAfterPlayingMs: Long? = null
+    private var ignoreNextStoppedEvent = false
+    private var released = false
     private var lastDiagnosticsElapsedMs = 0L
     private var activeMediaKey: String? = null
     private val sessionSoftwareMediaKeys = mutableSetOf<String>()
@@ -145,7 +147,13 @@ class VlcPlayer(
     }
 
     init {
-        mediaPlayer.setEventListener { event -> handler.post { onVlcEvent(event) } }
+        mediaPlayer.setEventListener { event ->
+            handler.post {
+                // libVLC puede haber emitido el evento justo antes de release(); nunca
+                // debemos consultar un objeto nativo que ya dejó de existir.
+                if (!released) onVlcEvent(event)
+            }
+        }
         handler.postDelayed(stallWatchdog, WATCHDOG_INTERVAL_MS)
     }
 
@@ -226,7 +234,9 @@ class VlcPlayer(
             }
 
             MediaPlayer.Event.Stopped -> {
-                if (!recovering) {
+                if (ignoreNextStoppedEvent) {
+                    ignoreNextStoppedEvent = false
+                } else if (!recovering) {
                     vlcPlaybackState = Player.STATE_IDLE
                     wantsToPlay = false
                     updateDiagnostics(health = PlaybackHealth.IDLE)
@@ -487,12 +497,46 @@ class VlcPlayer(
         startIndex: Int,
         startPositionMs: Long
     ): ListenableFuture<*> {
+        // Una sustitución real sí cambia el medio nativo. Detenerlo antes de liberar su
+        // descriptor evita carreras entre el decodificador de vídeo y la nueva apertura.
+        if (mediaPlayer.media != null) {
+            ignoreNextStoppedEvent = true
+            mediaPlayer.stop()
+        }
         playlist = mediaItems
         currentIndex = if (startIndex == C.INDEX_UNSET) 0 else startIndex
         rebuildOrder()
         val start = if (startPositionMs == C.TIME_UNSET) 0L else startPositionMs
         openCurrent(start, play = wantsToPlay)
         return Futures.immediateVoidFuture()
+    }
+
+    /**
+     * Actualiza la línea de tiempo de Media3 sin tocar el medio abierto por VLC.
+     * Devuelve false cuando el elemento activo cambió y el servicio debe usar la ruta
+     * normal de apertura desde cero.
+     */
+    internal fun replacePlaylistPreservingCurrent(
+        mediaItems: List<MediaItem>,
+        updatedCurrentIndex: Int
+    ): Boolean {
+        if (mediaPlayer.media == null || mediaItems.isEmpty()) return false
+        val index = updatedCurrentIndex.coerceIn(mediaItems.indices)
+        val preservesCurrent = PlaybackQueueEditor.preservesCurrent(
+            entries = playlist,
+            currentIndex = currentIndex,
+            updatedEntries = mediaItems,
+            updatedCurrentIndex = index,
+            sameIdentity = { before, after -> mediaIdentity(before) == mediaIdentity(after) }
+        )
+        if (!preservesCurrent) return false
+
+        playlist = mediaItems
+        currentIndex = index
+        activeMediaKey = mediaIdentity(mediaItems[index])
+        rebuildOrder()
+        invalidateState()
+        return true
     }
 
     override fun handlePrepare(): ListenableFuture<*> {
@@ -550,6 +594,8 @@ class VlcPlayer(
     }
 
     override fun handleRelease(): ListenableFuture<*> {
+        if (released) return Futures.immediateVoidFuture()
+        released = true
         handler.removeCallbacks(stallWatchdog)
         detachVideoOutput()
         mediaPlayer.setEventListener(null)
@@ -678,7 +724,7 @@ class VlcPlayer(
         val item = playlist.getOrNull(currentIndex) ?: return
         val uri = item.localConfiguration?.uri ?: return
         val startPlan = PlaybackStartPolicy.plan(startPositionMs)
-        val mediaKey = "$currentIndex|$uri"
+        val mediaKey = mediaIdentity(item)
         val reopeningSameMedia = mediaKey == activeMediaKey
         if (!reopeningSameMedia) {
             activeMediaKey = mediaKey
@@ -770,6 +816,10 @@ class VlcPlayer(
         runCatching { openFd?.close() }
         openFd = null
     }
+
+    private fun mediaIdentity(item: MediaItem): String =
+        item.mediaId.takeIf(String::isNotBlank)
+            ?: item.localConfiguration?.uri?.toString().orEmpty()
 
     // ------------------------------------------------------- EngineControls
 

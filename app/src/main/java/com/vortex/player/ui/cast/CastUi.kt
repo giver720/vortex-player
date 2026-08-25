@@ -1,5 +1,8 @@
 package com.vortex.player.ui.cast
 
+import android.util.Log
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +43,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.appcompat.view.ContextThemeWrapper
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.framework.CastButtonFactory
+import com.vortex.player.R
 import com.vortex.player.cast.CastCoordinator
 import com.vortex.player.cast.CastUiState
 import com.vortex.player.ui.common.formatDuration
@@ -55,18 +60,36 @@ fun CastRouteButton(modifier: Modifier = Modifier) {
     if (!state.sdkAvailable) return
     AndroidView(
         factory = { context ->
-            MediaRouteButton(context).also { button ->
-                CastButtonFactory.setUpMediaRouteButton(
-                    context,
-                    ContextCompat.getMainExecutor(context),
-                    button
-                )
-                button.contentDescription = "Enviar a pantalla"
+            FrameLayout(context).also { container ->
+                runCatching {
+                    val themedContext = ContextThemeWrapper(context, R.style.Theme_Vortex_Cast)
+                    MediaRouteButton(themedContext).also { button ->
+                        CastButtonFactory.setUpMediaRouteButton(
+                            themedContext,
+                            ContextCompat.getMainExecutor(context),
+                            button
+                        )
+                        button.contentDescription = "Enviar a pantalla"
+                        container.addView(
+                            button,
+                            FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                    }
+                }.onFailure { error ->
+                    Log.e(CAST_UI_TAG, "No se pudo crear el selector de Cast", error)
+                    // El selector es opcional: un fallo del SDK nunca debe cerrar VLC.
+                    container.post(CastCoordinator::reportUiFailure)
+                }
             }
         },
         modifier = modifier.size(48.dp)
     )
 }
+
+private const val CAST_UI_TAG = "VortexCastUi"
 
 @Composable
 fun RemoteCastOverlay(state: CastUiState, onBack: () -> Unit) {

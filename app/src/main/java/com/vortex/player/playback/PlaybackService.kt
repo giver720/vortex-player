@@ -277,15 +277,25 @@ class PlaybackService : MediaSessionService() {
             clearQueue()
             return
         }
-        val position = positionOverrideMs ?: vlcPlayer.currentPosition.coerceAtLeast(0L)
+        val currentPosition = vlcPlayer.currentPosition.coerceAtLeast(0L)
         val wantsPlayback = vlcPlayer.playWhenReady
         val index = currentIndex.coerceIn(entries.indices)
+        val mediaItems = entries.map { it.toMediaItem() }
+        val keptCurrent = positionOverrideMs == null &&
+            vlcPlayer.replacePlaylistPreservingCurrent(mediaItems, index)
+        val position = when {
+            keptCurrent -> currentPosition
+            positionOverrideMs != null -> positionOverrideMs.coerceAtLeast(0L)
+            else -> 0L
+        }
         PlaybackHub.setQueue(entries, index, position)
-        vlcPlayer.setMediaItems(entries.map { it.toMediaItem() }, index, position)
         applyOrder()
-        vlcPlayer.setVideoEnabled(!audioOnly)
-        vlcPlayer.prepare()
-        vlcPlayer.playWhenReady = wantsPlayback && !CastCoordinator.state.value.connected
+        if (!keptCurrent) {
+            vlcPlayer.setMediaItems(mediaItems, index, position)
+            vlcPlayer.setVideoEnabled(!audioOnly)
+            vlcPlayer.prepare()
+            vlcPlayer.playWhenReady = wantsPlayback && !CastCoordinator.state.value.connected
+        }
         if (CastCoordinator.state.value.connected) CastCoordinator.loadCurrent(autoplay = wantsPlayback)
         persistSessionAsync()
     }

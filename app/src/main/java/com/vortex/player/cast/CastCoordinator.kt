@@ -122,6 +122,14 @@ object CastCoordinator {
             }
     }
 
+    /** Desactiva sólo la interfaz Cast cuando MediaRouter no puede crear su selector. */
+    fun reportUiFailure() {
+        _state.value = _state.value.copy(
+            sdkAvailable = false,
+            message = "Cast no está disponible en este dispositivo"
+        )
+    }
+
     fun loadCurrent(autoplay: Boolean? = null) {
         val session = castContext?.sessionManager?.currentCastSession ?: return
         main.post { loadCurrent(session, autoplay) }

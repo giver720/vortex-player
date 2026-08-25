@@ -16,6 +16,22 @@ data class QueueEditResult<T>(
  */
 object PlaybackQueueEditor {
 
+    /**
+     * Comprueba que una edición sólo movió el elemento activo y no lo sustituyó.
+     * La identidad la aporta el motor para no acoplar este cálculo puro a Media3.
+     */
+    fun <T> preservesCurrent(
+        entries: List<T>,
+        currentIndex: Int,
+        updatedEntries: List<T>,
+        updatedCurrentIndex: Int,
+        sameIdentity: (T, T) -> Boolean
+    ): Boolean {
+        val current = entries.getOrNull(currentIndex) ?: return false
+        val updatedCurrent = updatedEntries.getOrNull(updatedCurrentIndex) ?: return false
+        return sameIdentity(current, updatedCurrent)
+    }
+
     fun <T> move(
         entries: List<T>,
         currentIndex: Int,

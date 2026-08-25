@@ -8,6 +8,54 @@ import org.junit.Test
 class PlaybackQueueEditorTest {
 
     @Test
+    fun `identity validator accepts the same current item at a new index`() {
+        assertTrue(
+            PlaybackQueueEditor.preservesCurrent(
+                entries = listOf("a", "b", "c"),
+                currentIndex = 1,
+                updatedEntries = listOf("c", "a", "b"),
+                updatedCurrentIndex = 2,
+                sameIdentity = String::equals
+            )
+        )
+    }
+
+    @Test
+    fun `identity validator rejects a replacement at the same index`() {
+        assertFalse(
+            PlaybackQueueEditor.preservesCurrent(
+                entries = listOf("a", "b", "c"),
+                currentIndex = 1,
+                updatedEntries = listOf("a", "x", "c"),
+                updatedCurrentIndex = 1,
+                sameIdentity = String::equals
+            )
+        )
+    }
+
+    @Test
+    fun `identity validator rejects empty or invalid queues`() {
+        assertFalse(
+            PlaybackQueueEditor.preservesCurrent(
+                entries = emptyList<String>(),
+                currentIndex = 0,
+                updatedEntries = listOf("a"),
+                updatedCurrentIndex = 0,
+                sameIdentity = String::equals
+            )
+        )
+        assertFalse(
+            PlaybackQueueEditor.preservesCurrent(
+                entries = listOf("a"),
+                currentIndex = 0,
+                updatedEntries = emptyList(),
+                updatedCurrentIndex = 0,
+                sameIdentity = String::equals
+            )
+        )
+    }
+
+    @Test
     fun `moving another item across current keeps the same media selected`() {
         val result = PlaybackQueueEditor.move(
             entries = listOf("a", "b", "c", "d"),
