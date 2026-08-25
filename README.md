@@ -106,11 +106,18 @@ inteligentes se actualizan con la biblioteca, y una playlist de Spotify puede co
 lista local que distingue lo disponible de lo que todavía falta. Al usar Cast se envía la cola
 completa, incluidos archivos locales mediante el puente temporal.
 
-**Cola bajo control.** El dock y el reproductor abren una cola visual común. Desde ella se
-pueden buscar y seleccionar varios MP3, audios o vídeos, insertarlos como siguientes o al final,
-saltar a cualquier elemento, cambiar el orden y quitar uno o varios sin reiniciar el medio actual.
-La selección múltiple de la biblioteca también pregunta si debe reproducir ahora, después o al
-final, evitando reemplazar por accidente lo que ya estaba sonando.
+**Fila 2.0.** El dock y el reproductor abren una pantalla completa común con el medio actual fijo,
+secciones plegables para lo reproducido y lo siguiente, duración pendiente, búsqueda y selección
+múltiple. Los elementos se pueden mover mediante arrastre o gestos laterales, enviar al siguiente
+puesto o al final y quitar con confirmación y deshacer, sin reiniciar VLC ni perder la posición.
+Cada instancia tiene identidad propia, por lo que un mismo archivo puede añadirse varias veces y
+editarse de forma independiente. Al elegir nuevos MP3 o vídeos, Vórtex detecta duplicados y deja
+omitirlos o añadirlos de todos modos.
+
+**Autoplay privado.** Un interruptor recordado completa la fila con cinco sugerencias cuando
+quedan dos elementos. Las recomendaciones se calculan sólo con la biblioteca e historial locales,
+priorizan artista, álbum, carpeta, tipo y favoritos, y nunca envían datos. Las sugerencias se
+distinguen de lo añadido manualmente y pueden excluirse al guardar la fila como playlist.
 
 **Se actualiza sola.** Vórtex consulta las publicaciones de este repositorio, elige el APK
 que corresponde a la arquitectura del móvil, lo descarga con progreso y se lo entrega al
@@ -125,7 +132,7 @@ atrás sin depender de que alguien recuerde volver aquí.
 - Árbol de carpetas navegable, con ramas plegables y migas de pan.
 - Búsqueda unificada por nombre de fichero, carpeta y ruta, con resultados agrupados.
 - Orden por fecha, nombre, duración, tamaño o resolución, y vista rejilla o lista.
-- Selección múltiple, cola visual editable, playlists, M3U/M3U8, listas inteligentes y favoritos.
+- Selección múltiple, fila 2.0 editable, autoplay local, playlists, M3U/M3U8, listas inteligentes y favoritos.
 - "Continuar viendo" conserva cada 4 segundos la cola completa, la pista, posición, modo
   solo-audio, velocidad, repetición y aleatorio en un archivo atómico. El dock y los botones
   Bluetooth pueden restaurarla incluso después de que Android destruya el proceso.

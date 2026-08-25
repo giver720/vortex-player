@@ -172,7 +172,7 @@ object CastCoordinator {
 
     private fun loadCurrent(session: CastSession, autoplayOverride: Boolean? = null) {
         val context = appContext ?: return
-        val queue = PlaybackHub.queue.value
+        val queue = PlaybackHub.queue.value.map { it.media }
         if (queue.isEmpty()) {
             _state.value = _state.value.copy(message = "No hay un medio para enviar")
             return

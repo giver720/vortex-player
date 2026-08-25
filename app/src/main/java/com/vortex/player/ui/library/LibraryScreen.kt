@@ -80,7 +80,7 @@ import com.vortex.player.data.ViewMode
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackService
 import com.vortex.player.ui.common.formatSize
-import com.vortex.player.ui.queue.PlaybackQueueDialog
+import com.vortex.player.ui.queue.QueueActivity
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -127,7 +127,6 @@ fun LibraryScreen(
     var showCreatePlaylist by remember { mutableStateOf(false) }
     var showCreateSmartPlaylist by remember { mutableStateOf(false) }
     var showSaveQueue by remember { mutableStateOf(false) }
-    var showPlaybackQueue by remember { mutableStateOf(false) }
     var showQueueSelectionActions by remember { mutableStateOf(false) }
     var pickerPlaylistId by remember { mutableStateOf<Long?>(null) }
     var editingPlaylistId by remember { mutableStateOf<Long?>(null) }
@@ -411,7 +410,7 @@ fun LibraryScreen(
         NowPlayingDock(
             onExpand = onOpenPlayer,
             onRequestPopup = onRequestPopup,
-            onOpenQueue = { showPlaybackQueue = true },
+            onOpenQueue = { QueueActivity.open(context) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
@@ -469,19 +468,6 @@ fun LibraryScreen(
                 showQueueSelectionActions = false
                 viewModel.addSelectionToQueue(playNext = false, order = visible)
             }
-        )
-    }
-
-    if (showPlaybackQueue) {
-        PlaybackQueueDialog(
-            queue = queue,
-            currentIndex = queueIndex,
-            availableMedia = library.entries,
-            onDismiss = { showPlaybackQueue = false },
-            onPlay = { PlaybackService.playQueueItem(context, it) },
-            onMove = { from, to -> PlaybackService.moveQueueItem(context, from, to) },
-            onRemove = { PlaybackService.removeQueueItems(context, it) },
-            onAdd = viewModel::addEntriesToQueue
         )
     }
 

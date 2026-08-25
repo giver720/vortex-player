@@ -13,7 +13,7 @@ import coil.memory.MemoryCache
 import com.vortex.player.cast.CastCoordinator
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackSessionStore
-import com.vortex.player.playback.toMediaEntry
+import com.vortex.player.playback.toQueueItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,7 +36,7 @@ class VortexApp : Application(), ImageLoaderFactory {
             PlaybackSessionStore(this@VortexApp).load()?.let { snapshot ->
                 val value = snapshot.normalized()
                 PlaybackHub.setQueue(
-                    value.entries.map { it.toMediaEntry() },
+                    value.entries.mapIndexed { index, entry -> entry.toQueueItem(index) },
                     value.currentIndex,
                     value.positionMs
                 )

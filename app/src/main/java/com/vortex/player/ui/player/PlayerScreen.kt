@@ -88,7 +88,7 @@ import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.common.rememberPlayerUiState
 import com.vortex.player.ui.cast.CastRouteButton
 import com.vortex.player.ui.cast.RemoteCastOverlay
-import com.vortex.player.ui.queue.PlaybackQueueDialog
+import com.vortex.player.ui.queue.QueueActivity
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -151,7 +151,6 @@ fun PlayerScreen(
     var feedback by remember { mutableStateOf<Feedback?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf<Panel?>(null) }
-    var showQueue by remember { mutableStateOf(false) }
     val subtitleScope = rememberCoroutineScope()
     var primarySubtitleName by remember(entry?.id) { mutableStateOf<String?>(null) }
     var secondarySubtitle by remember(entry?.id) { mutableStateOf<SubtitleDocument?>(null) }
@@ -357,7 +356,7 @@ fun PlayerScreen(
                     onToggleShuffle = { PlaybackService.toggleShuffle() },
                     onToggleAudioOnly = { PlaybackService.setAudioOnly(!audioOnly) },
                     onOpenAspect = { panel = Panel.ASPECT },
-                    onOpenQueue = { showQueue = true },
+                    onOpenQueue = { QueueActivity.open(context) },
                     onOpenPanel = { panel = it },
                     onPip = onEnterPip,
                     onPopup = onRequestPopup,
@@ -533,20 +532,6 @@ fun PlayerScreen(
         }
     }
 
-    if (showQueue) {
-        PlaybackQueueDialog(
-            queue = queue,
-            currentIndex = queueIndex,
-            availableMedia = library.entries,
-            onDismiss = { showQueue = false },
-            onPlay = { PlaybackService.playQueueItem(context, it) },
-            onMove = { from, to -> PlaybackService.moveQueueItem(context, from, to) },
-            onRemove = { PlaybackService.removeQueueItems(context, it) },
-            onAdd = { entries, playNext ->
-                PlaybackService.addToQueue(context, entries, playNext)
-            }
-        )
-    }
 }
 
 @Composable

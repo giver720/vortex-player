@@ -423,7 +423,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         viewModelScope.launch {
-            val id = repository.createPlaylistNow(name, queue, source = "QUEUE")
+            val id = repository.createPlaylistNow(name, queue.map { it.media }, source = "QUEUE")
             _message.value = "Cola guardada como «$name»"
             _openPlaylist.value = id
         }

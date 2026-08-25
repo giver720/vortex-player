@@ -56,7 +56,31 @@ data class PersistedMediaEntry(
     val dateAddedSec: Long,
     val isVideo: Boolean,
     val artist: String?,
-    val album: String?
+    val album: String?,
+    val queueId: String = "",
+    val origin: String = QueueOrigin.MANUAL.name,
+    val addedAtMs: Long = 0L
+)
+
+internal fun PlaybackQueueItem.toPersisted(): PersistedMediaEntry = PersistedMediaEntry(
+    queueId = queueId,
+    origin = origin.name,
+    addedAtMs = addedAtMs,
+    id = media.id,
+    uri = media.uri.toString(),
+    title = media.title,
+    displayName = media.displayName,
+    durationMs = media.durationMs,
+    sizeBytes = media.sizeBytes,
+    mimeType = media.mimeType,
+    width = media.width,
+    height = media.height,
+    folderPath = media.folderPath,
+    folderName = media.folderName,
+    dateAddedSec = media.dateAddedSec,
+    isVideo = media.isVideo,
+    artist = media.artist,
+    album = media.album
 )
 
 internal fun MediaEntry.toPersisted(): PersistedMediaEntry = PersistedMediaEntry(
@@ -95,9 +119,17 @@ internal fun PersistedMediaEntry.toMediaEntry(): MediaEntry = MediaEntry(
     album = album
 )
 
+internal fun PersistedMediaEntry.toQueueItem(index: Int = 0): PlaybackQueueItem =
+    PlaybackQueueItem(
+        queueId = queueId.ifBlank { "legacy-$index-${uri.hashCode()}" },
+        media = toMediaEntry(),
+        origin = runCatching { QueueOrigin.valueOf(origin) }.getOrDefault(QueueOrigin.MANUAL),
+        addedAtMs = addedAtMs
+    )
+
 /** Códec versionado y tolerante a datos opcionales de versiones anteriores. */
 object PlaybackSessionCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun encode(snapshot: PlaybackSessionSnapshot): String {
         val value = snapshot.normalized()
@@ -122,7 +154,7 @@ object PlaybackSessionCodec {
         val items = root.optJSONArray("entries") ?: return null
         val entries = buildList {
             for (index in 0 until items.length()) {
-                items.optJSONObject(index)?.toPersistedOrNull()?.let(::add)
+                items.optJSONObject(index)?.toPersistedOrNull(index)?.let(::add)
             }
         }
         if (entries.isEmpty()) return null
@@ -155,9 +187,12 @@ object PlaybackSessionCodec {
         put("isVideo", isVideo)
         put("artist", artist ?: JSONObject.NULL)
         put("album", album ?: JSONObject.NULL)
+        put("queueId", queueId)
+        put("origin", origin)
+        put("addedAtMs", addedAtMs)
     }
 
-    private fun JSONObject.toPersistedOrNull(): PersistedMediaEntry? {
+    private fun JSONObject.toPersistedOrNull(index: Int): PersistedMediaEntry? {
         val uri = optString("uri").takeIf { it.isNotBlank() } ?: return null
         return PersistedMediaEntry(
             id = optLong("id", 0L),
@@ -174,7 +209,10 @@ object PlaybackSessionCodec {
             dateAddedSec = optLong("dateAddedSec", 0L),
             isVideo = optBoolean("isVideo", false),
             artist = optNullableString("artist"),
-            album = optNullableString("album")
+            album = optNullableString("album"),
+            queueId = optString("queueId").ifBlank { "legacy-$index-${uri.hashCode()}" },
+            origin = optString("origin", QueueOrigin.MANUAL.name),
+            addedAtMs = optLong("addedAtMs", 0L)
         )
     }
 

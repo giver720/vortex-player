@@ -117,6 +117,7 @@ class PlaybackService : MediaSessionService() {
     private var audioOnly = false
     private var sleepRunnable: Runnable? = null
     private var order = PlaybackPrefs()
+    private var autoplayRefillRunning = false
 
     override fun onCreate() {
         super.onCreate()
@@ -171,10 +172,13 @@ class PlaybackService : MediaSessionService() {
     private fun startOrderPreferences() {
         scope.launch {
             PlaybackPreferences.observe(this@PlaybackService).collect { prefs ->
+                val autoplayChanged = prefs.autoplay != order.autoplay
                 order = prefs
                 PlaybackHub.setRepeat(prefs.repeat)
                 PlaybackHub.setShuffle(prefs.shuffle)
+                PlaybackHub.setAutoplay(prefs.autoplay)
                 applyOrder()
+                if (autoplayChanged) applyAutoplayPreference(prefs.autoplay)
             }
         }
     }
@@ -194,11 +198,57 @@ class PlaybackService : MediaSessionService() {
      * a que el disco conteste dejaría el botón sin responder durante un fotograma o dos.
      */
     private fun setOrder(prefs: PlaybackPrefs) {
+        val autoplayChanged = prefs.autoplay != order.autoplay
         order = prefs
         PlaybackHub.setRepeat(prefs.repeat)
         PlaybackHub.setShuffle(prefs.shuffle)
+        PlaybackHub.setAutoplay(prefs.autoplay)
         applyOrder()
+        if (autoplayChanged) applyAutoplayPreference(prefs.autoplay)
         scope.launch { PlaybackPreferences.save(this@PlaybackService, prefs) }
+    }
+
+    private fun applyAutoplayPreference(enabled: Boolean) {
+        if (enabled) {
+            maybeRefillAutoplay()
+            return
+        }
+        val queue = PlaybackHub.queue.value
+        if (queue.isEmpty()) return
+        val current = PlaybackHub.currentIndex.value.coerceIn(queue.indices)
+        val pendingAutoplay = queue.mapIndexedNotNull { index, item ->
+            index.takeIf { index > current && item.origin == QueueOrigin.AUTOPLAY }
+        }.toSet()
+        if (pendingAutoplay.isNotEmpty()) {
+            val result = PlaybackQueueEditor.remove(queue, current, pendingAutoplay)
+            replaceQueueWithoutRestart(result.entries, result.currentIndex)
+        }
+    }
+
+    /** Mantiene cinco sugerencias locales cuando quedan dos o menos elementos pendientes. */
+    private fun maybeRefillAutoplay() {
+        if (!order.autoplay || autoplayRefillRunning) return
+        val queue = PlaybackHub.queue.value
+        if (queue.isEmpty()) return
+        val current = PlaybackHub.currentIndex.value.coerceIn(queue.indices)
+        if (queue.size - current - 1 > AUTOPLAY_REFILL_THRESHOLD) return
+        autoplayRefillRunning = true
+        try {
+            val recommendations = QueueAutoplayEngine.recommend(
+                library = repository.library.value,
+                queue = queue,
+                currentIndex = current,
+                limit = AUTOPLAY_BATCH_SIZE
+            )
+            if (recommendations.isNotEmpty()) {
+                replaceQueueWithoutRestart(
+                    queue + recommendations.map(PlaybackQueueItem::autoplay),
+                    current
+                )
+            }
+        } finally {
+            autoplayRefillRunning = false
+        }
     }
 
     private fun sessionActivityIntent(): PendingIntent =
@@ -221,7 +271,7 @@ class PlaybackService : MediaSessionService() {
                 IllegalStateException("No hay una sesión de Vórtex para reanudar")
             )
             restoreSnapshotState(snapshot)
-            val entries = snapshot.entries.map { it.toMediaEntry() }
+            val entries = snapshot.entries.mapIndexed { index, entry -> entry.toQueueItem(index) }
             return Futures.immediateFuture(
                 MediaSession.MediaItemsWithStartPosition(
                     entries.map { it.toMediaItem() },
@@ -269,7 +319,7 @@ class PlaybackService : MediaSessionService() {
 
     /** Modifica la cola conservando el medio, la posición y el estado pausa/reproducción. */
     private fun replaceQueueWithoutRestart(
-        entries: List<MediaEntry>,
+        entries: List<PlaybackQueueItem>,
         currentIndex: Int,
         positionOverrideMs: Long? = null
     ) {
@@ -326,11 +376,11 @@ class PlaybackService : MediaSessionService() {
     /** Repone estado no destructivo; Media3 cargará los elementos cuando vaya a reproducir. */
     private fun restoreSnapshotState(raw: PlaybackSessionSnapshot) {
         val snapshot = raw.normalized()
-        val entries = snapshot.entries.map { it.toMediaEntry() }
+        val entries = snapshot.entries.mapIndexed { index, entry -> entry.toQueueItem(index) }
         PlaybackHub.setQueue(entries, snapshot.currentIndex, snapshot.positionMs)
         audioOnly = snapshot.audioOnly
         PlaybackHub.setAudioOnly(audioOnly)
-        order = PlaybackPrefs(snapshot.repeat, snapshot.shuffle)
+        order = order.copy(repeat = snapshot.repeat, shuffle = snapshot.shuffle)
         PlaybackHub.setRepeat(snapshot.repeat)
         PlaybackHub.setShuffle(snapshot.shuffle)
         vlcPlayer.setVideoEnabled(!audioOnly)
@@ -344,6 +394,7 @@ class PlaybackService : MediaSessionService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             PlaybackHub.setCurrentIndex(vlcPlayer.currentMediaItemIndex)
             persistSessionAsync()
+            maybeRefillAutoplay()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -450,7 +501,7 @@ class PlaybackService : MediaSessionService() {
         val entries = PlaybackHub.queue.value
         // Una URL firmada o con credenciales puede vivir en memoria mientras se reproduce,
         // pero no debe terminar en playback-session.json ni en las preferencias de medios.
-        if (entries.isEmpty() || entries.any { !it.persistable }) return null
+        if (entries.isEmpty() || entries.any { !it.media.persistable }) return null
         return PlaybackSessionSnapshot(
             entries = entries.map { it.toPersisted() },
             currentIndex = vlcPlayer.currentMediaItemIndex
@@ -520,7 +571,7 @@ class PlaybackService : MediaSessionService() {
     // --------------------------------------------------------------- API
 
     private data class PlayRequest(
-        val entries: List<MediaEntry>,
+        val entries: List<PlaybackQueueItem>,
         val startIndex: Int,
         val positionMs: Long,
         val audioOnly: Boolean
@@ -528,6 +579,8 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         private const val ACTION_PLAY = "com.vortex.player.action.PLAY"
+        private const val AUTOPLAY_REFILL_THRESHOLD = 2
+        private const val AUTOPLAY_BATCH_SIZE = 5
 
         private val VLC_AUDIO_CAPABILITIES = AudioCapabilities(
             advanced = true,
@@ -571,6 +624,31 @@ class PlaybackService : MediaSessionService() {
         fun toggleShuffle() {
             val service = instance ?: return
             service.setOrder(service.order.copy(shuffle = !service.order.shuffle))
+        }
+
+        fun toggleAutoplay() {
+            val service = instance ?: return
+            service.setOrder(service.order.copy(autoplay = !service.order.autoplay))
+        }
+
+        fun toggleAutoplay(context: Context) {
+            val service = instance
+            if (service != null) {
+                service.setOrder(service.order.copy(autoplay = !service.order.autoplay))
+                return
+            }
+            val next = !PlaybackHub.autoplay.value
+            PlaybackHub.setAutoplay(next)
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                PlaybackPreferences.save(
+                    context.applicationContext,
+                    PlaybackPrefs(
+                        repeat = PlaybackHub.repeat.value,
+                        shuffle = PlaybackHub.shuffle.value,
+                        autoplay = next
+                    )
+                )
+            }
         }
 
         /**
@@ -617,7 +695,7 @@ class PlaybackService : MediaSessionService() {
             }
             val queue = PlaybackHub.queue.value
             if (queue.isEmpty()) return
-            play(
+            playQueue(
                 context = context,
                 entries = queue,
                 startIndex = PlaybackHub.currentIndex.value,
@@ -641,8 +719,15 @@ class PlaybackService : MediaSessionService() {
                 return
             }
             val index = PlaybackHub.currentIndex.value.coerceIn(current.indices)
-            val insertAt = if (playNext) index + 1 else current.size
-            val updated = current.toMutableList().apply { addAll(insertAt, entries) }
+            val insertAt = if (playNext) {
+                index + 1
+            } else {
+                (index + 1 until current.size)
+                    .firstOrNull { current[it].origin == QueueOrigin.AUTOPLAY }
+                    ?: current.size
+            }
+            val newItems = entries.map(PlaybackQueueItem::manual)
+            val updated = current.toMutableList().apply { addAll(insertAt, newItems) }
             val service = instance
             if (service != null) {
                 service.replaceQueueWithoutRestart(updated, index)
@@ -657,7 +742,12 @@ class PlaybackService : MediaSessionService() {
             if (index !in queue.indices) return
             val service = instance
             if (service != null) service.jumpToQueueItem(index)
-            else play(context, queue, index)
+            else playQueue(context, queue, index)
+        }
+
+        fun playQueueItem(context: Context, queueId: String) {
+            val index = PlaybackHub.queue.value.indexOfFirst { it.queueId == queueId }
+            if (index >= 0) playQueueItem(context, index)
         }
 
         /** Reordena una entrada y mantiene señalada la misma que estaba sonando. */
@@ -679,6 +769,11 @@ class PlaybackService : MediaSessionService() {
                     PlaybackHub.positionMs.value
                 )
             }
+        }
+
+        fun moveQueueItem(context: Context, queueId: String, toIndex: Int) {
+            val from = PlaybackHub.queue.value.indexOfFirst { it.queueId == queueId }
+            if (from >= 0) moveQueueItem(context, from, toIndex)
         }
 
         /** Quita una o varias posiciones. Si se quita la actual, continúa con la siguiente. */
@@ -709,9 +804,119 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
+        fun removeQueueItemsById(context: Context, queueIds: Set<String>) {
+            val indices = PlaybackHub.queue.value.mapIndexedNotNull { index, item ->
+                index.takeIf { item.queueId in queueIds }
+            }.toSet()
+            removeQueueItems(context, indices)
+        }
+
+        /** Restaura una edición deshecha y conserva el medio activo cuando sigue presente. */
+        fun restoreQueue(
+            context: Context,
+            entries: List<PlaybackQueueItem>,
+            currentQueueId: String?
+        ) {
+            if (entries.isEmpty()) return
+            val index = entries.indexOfFirst { it.queueId == currentQueueId }
+                .takeIf { it >= 0 } ?: 0
+            val service = instance
+            if (service != null) service.replaceQueueWithoutRestart(entries, index)
+            else PlaybackHub.setQueue(entries, index, PlaybackHub.positionMs.value)
+        }
+
+        fun clearPlayed(context: Context) {
+            val current = PlaybackHub.currentIndex.value
+            if (current <= 0) return
+            removeQueueItems(context, (0 until current).toSet())
+        }
+
+        fun clearUpcoming(context: Context) {
+            val queue = PlaybackHub.queue.value
+            if (queue.isEmpty()) return
+            val current = PlaybackHub.currentIndex.value.coerceIn(queue.indices)
+            if (current + 1 < queue.size) removeQueueItems(context, (current + 1 until queue.size).toSet())
+            val service = instance
+            if (service != null) {
+                service.setOrder(service.order.copy(autoplay = false))
+            } else {
+                PlaybackHub.setAutoplay(false)
+                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                    PlaybackPreferences.save(
+                        context.applicationContext,
+                        PlaybackPrefs(
+                            repeat = PlaybackHub.repeat.value,
+                            shuffle = PlaybackHub.shuffle.value,
+                            autoplay = false
+                        )
+                    )
+                }
+            }
+        }
+
+        fun sortUpcoming(context: Context, mode: QueueSortMode) {
+            val queue = PlaybackHub.queue.value
+            if (queue.isEmpty()) return
+            val current = PlaybackHub.currentIndex.value.coerceIn(queue.indices)
+            val prefix = queue.take(current + 1)
+            val comparator = when (mode) {
+                QueueSortMode.TITLE -> compareBy<PlaybackQueueItem> { it.media.title.lowercase() }
+                QueueSortMode.ARTIST -> compareBy { it.media.artist.orEmpty().lowercase() }
+                QueueSortMode.ALBUM -> compareBy { it.media.album.orEmpty().lowercase() }
+                QueueSortMode.DURATION -> compareBy { it.media.durationMs }
+                QueueSortMode.RECENTLY_ADDED -> compareByDescending { it.media.dateAddedSec }
+            }
+            replaceQueue(context, prefix + queue.drop(current + 1).sortedWith(comparator), current)
+        }
+
+        fun shuffleUpcoming(context: Context) {
+            val queue = PlaybackHub.queue.value
+            if (queue.isEmpty()) return
+            val current = PlaybackHub.currentIndex.value.coerceIn(queue.indices)
+            replaceQueue(context, queue.take(current + 1) + queue.drop(current + 1).shuffled(), current)
+        }
+
+        /** Mueve una selección conservando el orden relativo de sus elementos. */
+        fun moveQueueSelection(context: Context, queueIds: Set<String>, playNext: Boolean) {
+            val queue = PlaybackHub.queue.value
+            if (queueIds.isEmpty() || queue.isEmpty()) return
+            val selected = queue.filter { it.queueId in queueIds }
+            if (selected.isEmpty()) return
+            val remaining = queue.filterNot { it.queueId in queueIds }.toMutableList()
+            val currentId = queue.getOrNull(PlaybackHub.currentIndex.value)?.queueId
+            val currentInRemaining = remaining.indexOfFirst { it.queueId == currentId }
+            val insertAt = if (playNext && currentInRemaining >= 0) currentInRemaining + 1 else remaining.size
+            remaining.addAll(insertAt, selected)
+            val nextCurrent = remaining.indexOfFirst { it.queueId == currentId }.coerceAtLeast(0)
+            replaceQueue(context, remaining, nextCurrent)
+        }
+
+        private fun replaceQueue(context: Context, entries: List<PlaybackQueueItem>, currentIndex: Int) {
+            val service = instance
+            if (service != null) service.replaceQueueWithoutRestart(entries, currentIndex)
+            else PlaybackHub.setQueue(entries, currentIndex, PlaybackHub.positionMs.value)
+        }
+
         fun play(
             context: Context,
             entries: List<MediaEntry>,
+            startIndex: Int,
+            positionMs: Long = C.TIME_UNSET,
+            audioOnly: Boolean = false
+        ) {
+            if (entries.isEmpty()) return
+            playQueue(
+                context,
+                entries.map(PlaybackQueueItem::manual),
+                startIndex,
+                positionMs,
+                audioOnly
+            )
+        }
+
+        private fun playQueue(
+            context: Context,
+            entries: List<PlaybackQueueItem>,
             startIndex: Int,
             positionMs: Long = C.TIME_UNSET,
             audioOnly: Boolean = false
@@ -725,16 +930,16 @@ class PlaybackService : MediaSessionService() {
 }
 
 /** Metadatos que alimentan la notificación y la pantalla de bloqueo. */
-internal fun MediaEntry.toMediaItem(): MediaItem =
+internal fun PlaybackQueueItem.toMediaItem(): MediaItem =
     MediaItem.Builder()
-        .setUri(uri)
-        .setMediaId(uri.toString())
-        .setMimeType(mimeType)
+        .setUri(media.uri)
+        .setMediaId(queueId)
+        .setMimeType(media.mimeType)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle(title.ifBlank { displayName })
-                .setArtist(artist ?: folderName)
-                .setAlbumTitle(album)
+                .setTitle(media.title.ifBlank { media.displayName })
+                .setArtist(media.artist ?: media.folderName)
+                .setAlbumTitle(media.album)
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .build()

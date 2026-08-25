@@ -21,8 +21,8 @@ object PlaybackHub {
     private val _controls = MutableStateFlow<EngineControls?>(null)
     val controls: StateFlow<EngineControls?> = _controls.asStateFlow()
 
-    private val _queue = MutableStateFlow<List<MediaEntry>>(emptyList())
-    val queue: StateFlow<List<MediaEntry>> = _queue.asStateFlow()
+    private val _queue = MutableStateFlow<List<PlaybackQueueItem>>(emptyList())
+    val queue: StateFlow<List<PlaybackQueueItem>> = _queue.asStateFlow()
 
     private val _currentEntry = MutableStateFlow<MediaEntry?>(null)
     val currentEntry: StateFlow<MediaEntry?> = _currentEntry.asStateFlow()
@@ -58,12 +58,19 @@ object PlaybackHub {
     private val _shuffle = MutableStateFlow(false)
     val shuffle: StateFlow<Boolean> = _shuffle.asStateFlow()
 
+    private val _autoplay = MutableStateFlow(false)
+    val autoplay: StateFlow<Boolean> = _autoplay.asStateFlow()
+
     internal fun setRepeat(mode: RepeatMode) {
         _repeat.value = mode
     }
 
     internal fun setShuffle(enabled: Boolean) {
         _shuffle.value = enabled
+    }
+
+    internal fun setAutoplay(enabled: Boolean) {
+        _autoplay.value = enabled
     }
 
     /** Solo-audio: el vídeo se apaga pero el sonido continúa sin cortes. */
@@ -100,10 +107,10 @@ object PlaybackHub {
      * puede empezar en el mismo índice que la anterior: sin esto, elegir otra canción que
      * cayera en la misma posición de la lista heredaría el minutaje de la que sonaba.
      */
-    internal fun setQueue(entries: List<MediaEntry>, index: Int, positionMs: Long) {
+    internal fun setQueue(entries: List<PlaybackQueueItem>, index: Int, positionMs: Long) {
         _queue.value = entries
         _currentIndex.value = index
-        _currentEntry.value = entries.getOrNull(index)
+        _currentEntry.value = entries.getOrNull(index)?.media
         _positionMs.value = positionMs.coerceAtLeast(0L)
     }
 
@@ -114,7 +121,7 @@ object PlaybackHub {
         // posición desharía justo lo que se acaba de rescatar.
         if (index != _currentIndex.value) _positionMs.value = 0L
         _currentIndex.value = index
-        _currentEntry.value = _queue.value.getOrNull(index)
+        _currentEntry.value = _queue.value.getOrNull(index)?.media
     }
 
     internal fun setAudioOnly(enabled: Boolean) {

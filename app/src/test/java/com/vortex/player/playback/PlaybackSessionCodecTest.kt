@@ -100,6 +100,52 @@ class PlaybackSessionCodecTest {
         assertTrue(PlaybackSessionCodec.encode(snapshot).contains("\"artist\":null"))
     }
 
+    @Test
+    fun `version two preserves queue instance identity and origin`() {
+        val snapshot = PlaybackSessionSnapshot(
+            entries = listOf(
+                entry(1).copy(queueId = "manual-copy", origin = QueueOrigin.MANUAL.name, addedAtMs = 10L),
+                entry(1).copy(queueId = "auto-copy", origin = QueueOrigin.AUTOPLAY.name, addedAtMs = 20L)
+            ),
+            currentIndex = 1,
+            positionMs = 2_000L,
+            audioOnly = false,
+            speed = 1f,
+            repeat = RepeatMode.OFF,
+            shuffle = false,
+            updatedAtMs = 30L
+        )
+
+        val encoded = PlaybackSessionCodec.encode(snapshot)
+        val restored = requireNotNull(PlaybackSessionCodec.decode(encoded))
+
+        assertTrue(encoded.contains("\"version\":2"))
+        assertEquals(listOf("manual-copy", "auto-copy"), restored.entries.map { it.queueId })
+        assertEquals(QueueOrigin.AUTOPLAY.name, restored.entries.last().origin)
+        assertEquals(20L, restored.entries.last().addedAtMs)
+    }
+
+    @Test
+    fun `version one migrates duplicate media to stable distinct queue ids`() {
+        val json = """
+            {
+              "version": 1,
+              "currentIndex": 1,
+              "entries": [
+                {"uri":"content://media/same","title":"A"},
+                {"uri":"content://media/same","title":"A"}
+              ]
+            }
+        """.trimIndent()
+
+        val first = requireNotNull(PlaybackSessionCodec.decode(json))
+        val second = requireNotNull(PlaybackSessionCodec.decode(json))
+
+        assertEquals(2, first.entries.map { it.queueId }.distinct().size)
+        assertEquals(first.entries.map { it.queueId }, second.entries.map { it.queueId })
+        assertTrue(first.entries.all { it.origin == QueueOrigin.MANUAL.name })
+    }
+
     private fun entry(index: Int) = PersistedMediaEntry(
         id = index.toLong(),
         uri = "content://media/$index",

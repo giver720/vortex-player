@@ -30,13 +30,15 @@ enum class RepeatMode(val label: String, val playerMode: Int) {
 /** Cómo recorre Vórtex la cola. Se recuerda entre sesiones. */
 data class PlaybackPrefs(
     val repeat: RepeatMode = RepeatMode.OFF,
-    val shuffle: Boolean = false
+    val shuffle: Boolean = false,
+    val autoplay: Boolean = false
 )
 
 object PlaybackPreferences {
 
     private val REPEAT = stringPreferencesKey("repeat_mode")
     private val SHUFFLE = booleanPreferencesKey("shuffle")
+    private val AUTOPLAY = booleanPreferencesKey("autoplay")
 
     fun observe(context: Context): Flow<PlaybackPrefs> =
         context.playbackDataStore.data.map { prefs ->
@@ -44,7 +46,8 @@ object PlaybackPreferences {
                 repeat = prefs[REPEAT]
                     ?.let { name -> runCatching { RepeatMode.valueOf(name) }.getOrNull() }
                     ?: RepeatMode.OFF,
-                shuffle = prefs[SHUFFLE] ?: false
+                shuffle = prefs[SHUFFLE] ?: false,
+                autoplay = prefs[AUTOPLAY] ?: false
             )
         }
 
@@ -52,6 +55,7 @@ object PlaybackPreferences {
         context.playbackDataStore.edit {
             it[REPEAT] = prefs.repeat.name
             it[SHUFFLE] = prefs.shuffle
+            it[AUTOPLAY] = prefs.autoplay
         }
     }
 }
