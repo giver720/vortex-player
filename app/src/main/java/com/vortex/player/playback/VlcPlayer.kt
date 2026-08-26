@@ -389,6 +389,7 @@ class VlcPlayer(
         }.getOrNull() ?: return
         if (displayed > baseline) {
             mutableVideoOutputReady.value = true
+            recordPlaybackEvent(PlaybackEventType.FIRST_FRAME, "DISPLAYED_PICTURE")
         }
     }
 
@@ -420,6 +421,7 @@ class VlcPlayer(
         val resumePlayback = wantsToPlay
         if (decoderMode == DecoderMode.HARDWARE && decision.decoder == DecoderMode.SOFTWARE) {
             activeMediaKey?.let(sessionSoftwareMediaKeys::add)
+            recordPlaybackEvent(PlaybackEventType.DECODER_FALLBACK, "HARDWARE_TO_SOFTWARE")
         }
         decoderMode = decision.decoder
         recoveryCount++
@@ -450,9 +452,11 @@ class VlcPlayer(
         vlcPlaybackState = Player.STATE_IDLE
         wantsToPlay = false
         updateDiagnostics(PlaybackHealth.ERROR, "La recuperación automática no funcionó")
+        recordPlaybackEvent(PlaybackEventType.ERROR, "RECOVERY_EXHAUSTED")
     }
 
     private fun updateDiagnostics(health: PlaybackHealth, recovery: String? = null) {
+        val previousHealth = mutableDiagnostics.value.health
         mutableDiagnostics.value = mutableDiagnostics.value.copy(
             source = activePlan.source,
             decoder = decoderMode,
@@ -460,6 +464,32 @@ class VlcPlayer(
             cacheMs = activePlan.cacheMs,
             recoveryCount = recoveryCount,
             lastRecovery = recovery ?: mutableDiagnostics.value.lastRecovery
+        )
+        if (health != previousHealth) {
+            recordPlaybackEvent(PlaybackEventType.STATE, health.name)
+        }
+        if (recovery != null) {
+            recordPlaybackEvent(PlaybackEventType.RECOVERY, "RECOVERY_${recoveryCount}")
+        }
+    }
+
+    private fun recordPlaybackEvent(type: PlaybackEventType, detailCode: String? = null) {
+        val current = mutableDiagnostics.value
+        PlaybackEventLog.record(
+            context,
+            PlaybackEvent(
+                type = type,
+                mediaIdentity = activeMediaKey,
+                source = activePlan.source.name,
+                decoder = decoderMode.name,
+                health = current.health.name,
+                positionMs = lastKnownPositionMs,
+                durationMs = durationMs.takeIf { it != C.TIME_UNSET && it > 0L },
+                codec = current.codec,
+                width = current.width,
+                height = current.height,
+                detailCode = detailCode
+            )
         )
     }
 
@@ -655,6 +685,7 @@ class VlcPlayer(
 
     override fun handleRelease(): ListenableFuture<*> {
         if (released) return Futures.immediateVoidFuture()
+        recordPlaybackEvent(PlaybackEventType.RELEASE, "PLAYER_RELEASE")
         released = true
         handler.removeCallbacks(stallWatchdog)
         detachVideoOutput()
@@ -817,6 +848,10 @@ class VlcPlayer(
                 cacheMs = activePlan.cacheMs
             )
         }
+        recordPlaybackEvent(
+            PlaybackEventType.OPEN,
+            if (isRecovery) "RECOVERY_OPEN" else "NORMAL_OPEN"
+        )
 
         mediaPlayer.media?.release()
         closeFd()
@@ -871,6 +906,7 @@ class VlcPlayer(
         vlcPlaybackState = Player.STATE_IDLE
         wantsToPlay = false
         updateDiagnostics(PlaybackHealth.ERROR, "No se pudo abrir la fuente")
+        recordPlaybackEvent(PlaybackEventType.ERROR, "OPEN_FAILED_${cause?.javaClass?.simpleName ?: "UNKNOWN"}")
         invalidateState()
     }
 
@@ -979,6 +1015,7 @@ class VlcPlayer(
         displayedPicturesAtAttach = displayedAtAttach
         mutableVideoOutputReady.value = false
         resetVideoLivenessWatch(lastKnownPositionMs, displayedAtAttach)
+        recordPlaybackEvent(PlaybackEventType.SURFACE_ATTACH, "GENERATION_$generation")
 
         // Algunos decodificadores hardware no redirigen sus buffers al Surface nuevo al
         // volver desde biblioteca. Damos tiempo a una salida normal y, sólo si el reloj
@@ -1023,6 +1060,7 @@ class VlcPlayer(
         displayedPicturesAtAttach = null
         mutableVideoOutputReady.value = false
         if (videoLayout == null) return
+        recordPlaybackEvent(PlaybackEventType.SURFACE_DETACH, "GENERATION_$videoAttachGeneration")
         mediaPlayer.detachViews()
         (videoLayout?.parent as? ViewGroup)?.removeView(videoLayout)
         videoLayout = null
@@ -1032,6 +1070,7 @@ class VlcPlayer(
         if (videoScaleMode == mode) return
         videoScaleMode = mode
         applyVideoScale()
+        recordPlaybackEvent(PlaybackEventType.SCALE, mode.name)
     }
 
     private fun applyVideoScale() {

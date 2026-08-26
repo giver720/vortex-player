@@ -1,5 +1,8 @@
 package com.vortex.player.ui.settings
 
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,11 +38,17 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
+import com.vortex.player.BuildConfig
 import com.vortex.player.audio.AudioCapabilities
 import com.vortex.player.audio.AudioOutput
 import com.vortex.player.audio.AudioProMode
@@ -48,6 +57,8 @@ import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.ClippingRisk
 import com.vortex.player.audio.EqPreset
 import com.vortex.player.audio.VlcEqualizerPlanner
+import com.vortex.player.playback.PlaybackEventLog
+import com.vortex.player.playback.PlaybackLogSummary
 import com.vortex.player.spotify.SpotifyAccountState
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -71,6 +82,8 @@ fun SettingsScreen(
     val perOutput by viewModel.perOutput.collectAsStateWithLifecycle()
     val spotifyAccount by viewModel.spotifyAccount.collectAsStateWithLifecycle()
     val active = settings.enabled && !settings.bypassOn
+    val context = LocalContext.current
+    var playbackLogSummary by remember { mutableStateOf(PlaybackEventLog.summary(context)) }
 
     Box(Modifier.fillMaxSize().background(VortexPalette.Graphite)) {
         LazyColumn(
@@ -108,6 +121,17 @@ fun SettingsScreen(
                     onConnect = viewModel::connectSpotify,
                     onDisconnect = viewModel::disconnectSpotify,
                     onOpenLibrary = onOpenSpotify
+                )
+            }
+
+            item {
+                StabilityDiagnosticsPanel(
+                    summary = playbackLogSummary,
+                    onShare = { sharePlaybackDiagnostics(context) },
+                    onClear = {
+                        PlaybackEventLog.clear(context)
+                        playbackLogSummary = PlaybackEventLog.summary(context)
+                    }
                 )
             }
 
@@ -334,6 +358,87 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StabilityDiagnosticsPanel(
+    summary: PlaybackLogSummary,
+    onShare: () -> Unit,
+    onClear: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Outline, VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Shield,
+                contentDescription = null,
+                tint = if (summary.crashDetected) VortexPalette.Magenta else VortexPalette.Cyan,
+                modifier = Modifier.size(21.dp)
+            )
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(
+                    text = "ESTABILIDAD Y DIAGNÓSTICO",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = VortexPalette.TextHigh
+                )
+                Text(
+                    text = "${summary.eventCount} eventos · ${summary.bytes / 1024L} KiB" +
+                        if (summary.crashDetected) " · CIERRE DETECTADO" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (summary.crashDetected) VortexPalette.Magenta else VortexPalette.TextLow
+                )
+            }
+        }
+        Text(
+            text = "El informe permanece en este teléfono y oculta títulos, rutas, enlaces y credenciales.",
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextLow,
+            modifier = Modifier.padding(top = 8.dp, bottom = 10.dp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PresetChip(
+                label = "COMPARTIR INFORME",
+                selected = true,
+                enabled = summary.eventCount > 0,
+                onClick = onShare
+            )
+            PresetChip(
+                label = "BORRAR",
+                selected = false,
+                enabled = summary.eventCount > 0 || summary.crashDetected,
+                onClick = onClear
+            )
+        }
+    }
+}
+
+private fun sharePlaybackDiagnostics(context: Context) {
+    runCatching {
+        val report = PlaybackEventLog.exportFile(context)
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${BuildConfig.APPLICATION_ID}.updates",
+            report
+        )
+        context.startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Diagnóstico local de Vortex")
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = ClipData.newUri(context.contentResolver, "Diagnóstico Vortex", uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },
+                "Compartir diagnóstico"
+            )
+        )
     }
 }
 

@@ -1,14 +1,22 @@
 package com.vortex.player.playback
 
 import android.content.Context
+import android.net.Uri
+import android.widget.FrameLayout
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.vortex.player.audio.AudioSettings
 import com.vortex.player.audio.EqPreset
+import com.vortex.player.ui.player.PlayerActivity
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,6 +32,12 @@ import java.util.concurrent.atomic.AtomicReference
 /** Smoke test nativo: abre PCM real, aplica EQ y atraviesa prepare/play/release en libVLC. */
 @RunWith(AndroidJUnit4::class)
 class VlcPlayerSmokeTest {
+
+    @Test
+    fun h264AndHevcProduceAConfirmedVideoFrame() {
+        assertFixtureProducesFrame("vortex-h264.mp4")
+        assertFixtureProducesFrame("vortex-hevc.mp4")
+    }
 
     @Test
     fun localAudioPreparesPlaysAndAcceptsEqualizer() {
@@ -140,6 +154,52 @@ class VlcPlayerSmokeTest {
 
     private fun onMain(block: () -> Unit) {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
+    }
+
+    private fun assertFixtureProducesFrame(assetName: String) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val media = File(context.cacheDir, assetName).also { output ->
+            context.assets.open(assetName).use { input ->
+                output.outputStream().use(input::copyTo)
+            }
+        }
+        val firstFrame = CountDownLatch(1)
+        val error = AtomicReference<PlaybackException?>()
+
+        ActivityScenario.launch(PlayerActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val output = FrameLayout(activity)
+                activity.setContentView(output)
+                val player = VlcPlayer(activity)
+                activity.lifecycleScope.launch {
+                    player.videoOutputReady.filter { it }.first()
+                    firstFrame.countDown()
+                }
+                player.addListener(object : Player.Listener {
+                    override fun onPlayerError(playbackError: PlaybackException) {
+                        error.set(playbackError)
+                        firstFrame.countDown()
+                    }
+                })
+                player.attachVideoOutput(output)
+                player.setMediaItem(MediaItem.fromUri(Uri.fromFile(media)))
+                player.prepare()
+                player.play()
+                activity.lifecycle.addObserver(
+                    object : androidx.lifecycle.DefaultLifecycleObserver {
+                        override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) {
+                            player.release()
+                        }
+                    }
+                )
+            }
+
+            assertTrue(
+                "$assetName no produjo un fotograma confirmado",
+                firstFrame.await(15, TimeUnit.SECONDS)
+            )
+            assertNull(error.get())
+        }
     }
 
     /** Tres segundos de PCM mono 16-bit a 8 kHz, evitando que termine entre READY y la aserción. */

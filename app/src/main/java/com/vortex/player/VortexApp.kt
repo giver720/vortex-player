@@ -12,6 +12,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.vortex.player.cast.CastCoordinator
 import com.vortex.player.playback.PlaybackHub
+import com.vortex.player.playback.PlaybackEventLog
 import com.vortex.player.playback.PlaybackSessionStore
 import com.vortex.player.playback.toQueueItem
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ class VortexApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        PlaybackEventLog.install(this)
         createNotificationChannels()
         CastCoordinator.initialize(this)
         restorePlaybackSession()

@@ -3,4 +3,5 @@
     <!-- Coincide con la carpeta que usa UpdateInstaller para dejar el APK descargado -->
     <external-files-path name="updates" path="updates/" />
     <files-path name="internal_updates" path="updates/" />
+    <files-path name="diagnostics" path="diagnostics/" />
 </paths>
