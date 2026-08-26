@@ -158,9 +158,10 @@ class VlcPlayerSmokeTest {
 
     private fun assertFixtureProducesFrame(assetName: String) {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val testAssets = InstrumentationRegistry.getInstrumentation().context.assets
         val media = File(context.cacheDir, assetName).also { output ->
-            context.assets.open(assetName).use { input ->
-                output.outputStream().use(input::copyTo)
+            testAssets.open(assetName).use { input ->
+                output.outputStream().use { target -> input.copyTo(target) }
             }
         }
         val firstFrame = CountDownLatch(1)

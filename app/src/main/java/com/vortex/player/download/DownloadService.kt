@@ -456,8 +456,9 @@ class DownloadService : Service() {
             val cancelled = cancelledJobs.remove(job.id)
             // Lo que dijo el motor manda sobre el mensaje de la excepción: "exited with
             // code 1" no le sirve a nadie, y el motivo real ya venía escrito en la salida.
-            val detail = engineErrors.joinToString(SEPARATOR).takeIf { it.isNotBlank() }
-            val message = detail ?: e.message ?: e.toString()
+            val fallbackMessage = e.message ?: e.toString()
+            val message = DownloadDiagnostics.finalMessage(engineErrors, fallbackMessage)
+            val detail = message.takeIf { engineErrors.isNotEmpty() }
             // Room contiene el último porcentaje persistido por el callback. Partir de esa
             // fila evita que un error al 80 % vuelva a mostrar 0 % aunque el `.part` siga ahí.
             val stored = repository.get(job.id) ?: latest

@@ -11,6 +11,13 @@ import org.junit.Test
 class YoutubeAutomationTest {
 
     @Test
+    fun publicFallbackUsesMaintainedClients() {
+        assertTrue(YoutubeAutomation.PUBLIC_CLIENT_ARGUMENT.contains("web_embedded"))
+        assertTrue(YoutubeAutomation.PUBLIC_CLIENT_ARGUMENT.contains("visionos"))
+        assertFalse(YoutubeAutomation.PUBLIC_CLIENT_ARGUMENT.contains("android_vr"))
+    }
+
+    @Test
     fun recognizesBothBotChallengeApostrophes() {
         assertTrue(YoutubeAutomation.isBotChallenge("Sign in to confirm you're not a bot"))
         assertTrue(YoutubeAutomation.isBotChallenge("Sign in to confirm you’re not a bot"))

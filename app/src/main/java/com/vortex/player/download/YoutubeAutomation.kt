@@ -5,9 +5,12 @@ import java.io.File
 /** Configuración automática para los desafíos modernos de YouTube, sin cuentas ni cookies. */
 object YoutubeAutomation {
     const val EJS_COMPONENT = "ejs:github"
-    const val PUBLIC_CLIENT_ARGUMENT = "youtube:player_client=android_vr"
+    // android_vr dejó de ser un cliente predeterminado en yt-dlp 2026.08.19. Los clientes
+    // embebido y visionOS son los fallbacks públicos vigentes y no necesitan cookies.
+    const val PUBLIC_CLIENT_ARGUMENT = "youtube:player_client=web_embedded,visionos"
     const val RECOVERY_STATUS = "YouTube pidió verificación · probando modo automático…"
-    const val RECOVERY_FAILED = "ERROR: YouTube bloqueó también el modo automático sin cuenta"
+    const val RECOVERY_FAILED =
+        "ERROR: YouTube exige verificación para este vídeo; el modo automático sin cuenta también fue bloqueado"
 
     fun quickJsExecutable(nativeLibraryDir: String): String? =
         File(nativeLibraryDir, "libqjs.so")

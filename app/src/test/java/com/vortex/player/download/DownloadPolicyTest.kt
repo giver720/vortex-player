@@ -72,6 +72,22 @@ class DownloadPolicyTest {
             DownloadDiagnostics.relevantLine("ERROR: Postprocessing failed")
         )
         assertEquals(null, DownloadDiagnostics.relevantLine("[download] 51.2% of 10 MiB"))
+        assertEquals(
+            null,
+            DownloadDiagnostics.relevantLine(
+                "WARNING: [youtube] No title found in player responses; falling back to initial data"
+            )
+        )
+        assertEquals(
+            "ERROR: Sign in to confirm you're not a bot",
+            DownloadDiagnostics.finalMessage(
+                listOf(
+                    "WARNING: metadata may be missing",
+                    "ERROR: Sign in to confirm you're not a bot"
+                ),
+                "Process exited with code 1"
+            )
+        )
     }
 
     @Test

@@ -320,6 +320,9 @@ object YtDlpEngine {
                 }
             }
         }
+        if (!botChallenge && YoutubeAutomation.isBotChallenge(first.exceptionOrNull()?.message.orEmpty())) {
+            botChallenge = true
+        }
         if (!botChallenge) return@withContext first.getOrThrow()
 
         val producedMedia = destination.walkTopDown()
@@ -327,18 +330,26 @@ object YtDlpEngine {
         if (producedMedia) return@withContext first.getOrThrow()
 
         onProgress(0f, -1L, YoutubeAutomation.RECOVERY_STATUS)
-        YoutubeDL.getInstance().execute(buildRequest(publicFallback = true), processId) {
+        var fallbackBlocked = false
+        val fallback = runCatching {
+            YoutubeDL.getInstance().execute(buildRequest(publicFallback = true), processId) {
                 progress, eta, line ->
-            onProgress(
-                progress,
-                eta,
-                if (YoutubeAutomation.isBotChallenge(line)) {
-                    YoutubeAutomation.RECOVERY_FAILED
-                } else {
-                    line
-                }
-            )
+                val blocked = YoutubeAutomation.isBotChallenge(line)
+                if (blocked) fallbackBlocked = true
+                onProgress(
+                    progress,
+                    eta,
+                    if (blocked) YoutubeAutomation.RECOVERY_FAILED else line
+                )
+            }
         }
+        if (
+            fallbackBlocked ||
+            YoutubeAutomation.isBotChallenge(fallback.exceptionOrNull()?.message.orEmpty())
+        ) {
+            throw IllegalStateException(YoutubeAutomation.RECOVERY_FAILED)
+        }
+        fallback.getOrThrow()
     }
 
     private fun YoutubeDLRequest.applyYoutubeAutomation(

@@ -83,12 +83,22 @@ object DownloadDiagnostics {
     fun relevantLine(line: String): String? {
         val trimmed = line.trim()
         if (trimmed.isBlank()) return null
-        if (trimmed.startsWith("ERROR", ignoreCase = true)) return trimmed
         val lower = trimmed.lowercase()
+        // Es una consecuencia del bloqueo, no su causa. Mostrarla primero ocultaba el
+        // ERROR real por el límite de tres líneas de la tarjeta.
+        if ("no title found in player responses" in lower) return null
+        if (trimmed.startsWith("ERROR", ignoreCase = true)) return trimmed
         val usefulWarning = trimmed.startsWith("WARNING", ignoreCase = true) &&
             warningClues.any(lower::contains)
         val conversionFailure = "conversion failed" in lower
         return trimmed.takeIf { usefulWarning || conversionFailure }
+    }
+
+    /** El fallo terminal siempre tiene prioridad sobre advertencias de contexto. */
+    fun finalMessage(lines: List<String>, fallback: String): String {
+        val distinct = (lines + fallback).map(String::trim).filter(String::isNotBlank).distinct()
+        val errors = distinct.filter { it.startsWith("ERROR", ignoreCase = true) }
+        return (errors.ifEmpty { distinct }).joinToString("\n—\n").ifBlank { fallback }
     }
 }
 
