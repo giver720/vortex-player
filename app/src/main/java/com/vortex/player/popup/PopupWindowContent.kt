@@ -1,5 +1,6 @@
 package com.vortex.player.popup
 
+import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,17 +45,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.compose.ui.platform.LocalContext
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackService
+import com.vortex.player.playback.VideoScaleMode
 import com.vortex.player.ui.common.rememberPlayerUiState
 import com.vortex.player.ui.theme.VortexMark
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
 import com.vortex.player.ui.theme.VortexTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Contenido de la ventana flotante. Un dedo la arrastra, dos la redimensionan y un toque
@@ -106,7 +108,7 @@ fun PopupWindowContent(
             if (audioOnly) {
                 PopupAudioFace(title = entry?.title.orEmpty(), playing = uiState.isPlaying)
             } else {
-                PopupVideoSurface(videoAspect = uiState.aspectRatio)
+                PopupVideoSurface()
             }
 
             AnimatedVisibility(
@@ -198,22 +200,47 @@ fun PopupWindowContent(
     }
 }
 
-@OptIn(UnstableApi::class)
 @Composable
-private fun PopupVideoSurface(videoAspect: Float) {
+private fun PopupVideoSurface() {
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
-    var container by remember { mutableStateOf<AspectRatioFrameLayout?>(null) }
+    val emptyOutputReady = remember { MutableStateFlow(false) }
+    val outputReady by (controls?.videoOutputReady ?: emptyOutputReady)
+        .collectAsStateWithLifecycle()
+    val attachedTo = remember { arrayOfNulls<Any>(1) }
 
-    DisposableEffect(controls, container) {
-        container?.let { controls?.attachVideoOutput(it) }
-        onDispose { controls?.detachVideoOutput() }
+    DisposableEffect(controls) {
+        onDispose {
+            controls?.detachVideoOutput()
+            attachedTo[0] = null
+        }
     }
 
-    AndroidView(
-        factory = { ctx -> AspectRatioFrameLayout(ctx).also { container = it } },
-        update = { it.setAspectRatio(videoAspect) },
-        modifier = Modifier.fillMaxSize()
-    )
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx -> FrameLayout(ctx) },
+            update = { view ->
+                val engine = controls
+                engine?.setVideoScale(VideoScaleMode.BEST_FIT)
+                if (attachedTo[0] !== engine) {
+                    engine?.attachVideoOutput(view)
+                    attachedTo[0] = engine
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        if (!outputReady) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = VortexPalette.Neon,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+    }
 }
 
 @Composable

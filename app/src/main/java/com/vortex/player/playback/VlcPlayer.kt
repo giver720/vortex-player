@@ -31,6 +31,20 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.util.Locale
 
+internal fun VideoScaleMode.toVlcScaleType(): MediaPlayer.ScaleType = when (this) {
+    VideoScaleMode.BEST_FIT -> MediaPlayer.ScaleType.SURFACE_BEST_FIT
+    VideoScaleMode.FIT_SCREEN -> MediaPlayer.ScaleType.SURFACE_FIT_SCREEN
+    VideoScaleMode.FILL -> MediaPlayer.ScaleType.SURFACE_FILL
+    VideoScaleMode.ORIGINAL -> MediaPlayer.ScaleType.SURFACE_ORIGINAL
+    VideoScaleMode.RATIO_16_9 -> MediaPlayer.ScaleType.SURFACE_16_9
+    VideoScaleMode.RATIO_4_3 -> MediaPlayer.ScaleType.SURFACE_4_3
+    VideoScaleMode.RATIO_16_10 -> MediaPlayer.ScaleType.SURFACE_16_10
+    VideoScaleMode.RATIO_221_1 -> MediaPlayer.ScaleType.SURFACE_221_1
+    VideoScaleMode.RATIO_235_1 -> MediaPlayer.ScaleType.SURFACE_235_1
+    VideoScaleMode.RATIO_239_1 -> MediaPlayer.ScaleType.SURFACE_239_1
+    VideoScaleMode.RATIO_5_4 -> MediaPlayer.ScaleType.SURFACE_5_4
+}
+
 /**
  * libVLC presentado como un [Player] de Media3.
  *
@@ -94,6 +108,7 @@ class VlcPlayer(
     private var lastDisplayedPictures = 0
     private var voutCount = 0
     private var videoAttachGeneration = 0L
+    private var displayedPicturesAtAttach: Int? = null
     private var seekAfterPlayingMs: Long? = null
     private var ignoreNextStoppedEvent = false
     private var released = false
@@ -109,6 +124,8 @@ class VlcPlayer(
 
     private val mutableDiagnostics = MutableStateFlow(PlaybackDiagnostics())
     override val diagnostics: StateFlow<PlaybackDiagnostics> = mutableDiagnostics.asStateFlow()
+    private val mutableVideoOutputReady = MutableStateFlow(false)
+    override val videoOutputReady: StateFlow<Boolean> = mutableVideoOutputReady.asStateFlow()
 
     /**
      * Orden en el que se recorre [playlist], como lista de índices.
@@ -121,6 +138,7 @@ class VlcPlayer(
 
     private var videoLayout: VLCVideoLayout? = null
     private var videoEnabled: Boolean = true
+    private var videoScaleMode: VideoScaleMode = VideoScaleMode.BEST_FIT
 
     /** Último ajuste aplicado; se reaplica al abrir cada medio por consistencia entre pistas. */
     private var audioSettings = AudioSettings()
@@ -278,6 +296,7 @@ class VlcPlayer(
                 }
                 if (next != lastKnownPositionMs) lastProgressElapsedMs = SystemClock.elapsedRealtime()
                 lastKnownPositionMs = next
+                refreshVideoOutputReadiness()
                 publishRuntimeDiagnostics()
             }
 
@@ -291,6 +310,26 @@ class VlcPlayer(
                 } else {
                     VideoSize.UNKNOWN
                 }
+                applyVideoScale()
+                val generation = videoAttachGeneration
+                handler.postDelayed({
+                    if (
+                        !released &&
+                        generation == videoAttachGeneration &&
+                        videoLayout != null &&
+                        voutCount > 0 &&
+                        !mutableVideoOutputReady.value
+                    ) {
+                        val statsAvailable = runCatching {
+                            mediaPlayer.media?.stats?.displayedPictures
+                        }.getOrNull() != null
+                        // En pausa VLC no genera un cuadro nuevo. En builds sin estadísticas,
+                        // Vout es la mejor confirmación disponible de que la superficie existe.
+                        if (!wantsToPlay || !statsAvailable) {
+                            mutableVideoOutputReady.value = true
+                        }
+                    }
+                }, VIDEO_OUTPUT_FALLBACK_MS)
                 publishRuntimeDiagnostics(force = true)
             }
         }
@@ -338,6 +377,18 @@ class VlcPlayer(
             scheduleRecovery(
                 reason = "El audio avanzó sin imagen; cambiando el vídeo de hardware a software"
             )
+        }
+    }
+
+    /** Revela la superficie sólo después de que VLC confirme un cuadro nuevo. */
+    private fun refreshVideoOutputReadiness() {
+        if (mutableVideoOutputReady.value || videoLayout == null || !videoEnabled) return
+        val baseline = displayedPicturesAtAttach ?: return
+        val displayed = runCatching {
+            mediaPlayer.media?.stats?.displayedPictures
+        }.getOrNull() ?: return
+        if (displayed > baseline) {
+            mutableVideoOutputReady.value = true
         }
     }
 
@@ -732,6 +783,7 @@ class VlcPlayer(
     private fun openCurrent(startPositionMs: Long, play: Boolean, isRecovery: Boolean = false) {
         val item = playlist.getOrNull(currentIndex) ?: return
         val uri = item.localConfiguration?.uri ?: return
+        mutableVideoOutputReady.value = false
         val startPlan = PlaybackStartPolicy.plan(startPositionMs)
         val mediaKey = mediaIdentity(item)
         val reopeningSameMedia = mediaKey == activeMediaKey
@@ -788,6 +840,7 @@ class VlcPlayer(
         if (!videoEnabled) media.addOption(":no-video")
 
         mediaPlayer.media = media
+        displayedPicturesAtAttach = if (videoLayout != null && videoEnabled) 0 else null
         media.release()
         restoreExternalSubtitlesOnPlaying = reopeningSameMedia && externalSubtitleUris.isNotEmpty()
 
@@ -905,7 +958,9 @@ class VlcPlayer(
     override fun attachVideoOutput(container: FrameLayout) {
         if (!videoEnabled) return
         detachVideoOutput()
-        val layout = VLCVideoLayout(context).also { videoLayout = it }
+        // VLCVideoLayout necesita el contexto de la Activity para resolver el tamaño real de
+        // la ventana. Con el contexto del servicio, VideoHelper no puede centrar ni escalar.
+        val layout = VLCVideoLayout(container.context).also { videoLayout = it }
         container.addView(
             layout,
             FrameLayout.LayoutParams(
@@ -914,12 +969,15 @@ class VlcPlayer(
             )
         )
         mediaPlayer.attachViews(layout, null, true, false)
+        applyVideoScale()
         val generation = ++videoAttachGeneration
         val attachedAtMs = SystemClock.elapsedRealtime()
         val positionAtAttachMs = lastKnownPositionMs
         val displayedAtAttach = runCatching {
             mediaPlayer.media?.stats?.displayedPictures
         }.getOrNull()
+        displayedPicturesAtAttach = displayedAtAttach
+        mutableVideoOutputReady.value = false
         resetVideoLivenessWatch(lastKnownPositionMs, displayedAtAttach)
 
         // Algunos decodificadores hardware no redirigen sus buffers al Surface nuevo al
@@ -962,10 +1020,27 @@ class VlcPlayer(
 
     override fun detachVideoOutput() {
         videoAttachGeneration++
+        displayedPicturesAtAttach = null
+        mutableVideoOutputReady.value = false
         if (videoLayout == null) return
         mediaPlayer.detachViews()
         (videoLayout?.parent as? ViewGroup)?.removeView(videoLayout)
         videoLayout = null
+    }
+
+    override fun setVideoScale(mode: VideoScaleMode) {
+        if (videoScaleMode == mode) return
+        videoScaleMode = mode
+        applyVideoScale()
+    }
+
+    private fun applyVideoScale() {
+        if (videoLayout == null) return
+        runCatching {
+            mediaPlayer.setVideoScale(videoScaleMode.toVlcScaleType())
+        }.onFailure { error ->
+            Log.w(TAG, "VLC no pudo aplicar la escala $videoScaleMode", error)
+        }
     }
 
     override fun addExternalSubtitle(uri: String) {
@@ -988,6 +1063,7 @@ class VlcPlayer(
         const val MAX_VLC_VOLUME = 200
         const val WATCHDOG_INTERVAL_MS = 4_000L
         const val STALL_TIMEOUT_MS = 16_000L
+        const val VIDEO_OUTPUT_FALLBACK_MS = 1_200L
         const val RECOVERY_OPEN_TIMEOUT_MS = 3_000L
         const val DIAGNOSTICS_INTERVAL_MS = 1_000L
         const val SEEK_RESET_THRESHOLD_MS = 1_000L

@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.media.AudioManager
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -59,7 +61,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,13 +68,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.ui.AspectRatioFrameLayout
 import com.vortex.player.BuildConfig
 import com.vortex.player.cast.CastCoordinator
 import com.vortex.player.data.MediaRepository
 import com.vortex.player.playback.PlaybackHub
 import com.vortex.player.playback.PlaybackDiagnostics
+import com.vortex.player.playback.PlaybackHealth
 import com.vortex.player.playback.PlaybackService
+import com.vortex.player.playback.VideoScaleMode
 import com.vortex.player.subtitle.OnlineSubtitleResult
 import com.vortex.player.subtitle.OnlineSubtitleTarget
 import com.vortex.player.subtitle.OnlineSubtitleUiState
@@ -100,19 +102,22 @@ import kotlin.math.abs
 /**
  * Cómo se encaja el vídeo en la pantalla, al estilo de VLC.
  *
- * Los tres primeros son modos de encaje relativos al vídeo real; el resto fuerzan una
+ * Los cuatro primeros son modos de encaje relativos al vídeo real; el resto fuerzan una
  * relación fija, que es lo que hace falta cuando un fichero viene con metadatos de
  * aspecto erróneos y sale achatado pese a "ajustar".
  */
-enum class AspectPreset(val label: String, val forcedRatio: Float?) {
-    FIT("AJUSTAR", null),
-    CROP("LLENAR", null),
-    STRETCH("ESTIRAR", null),
-    R16_9("16:9", 16f / 9f),
-    R4_3("4:3", 4f / 3f),
-    R18_9("18:9", 2f),
-    R21_9("21:9", 21f / 9f),
-    R1_1("1:1", 1f)
+enum class AspectPreset(val label: String, val scaleMode: VideoScaleMode) {
+    FIT("AJUSTAR", VideoScaleMode.BEST_FIT),
+    CROP("LLENAR", VideoScaleMode.FIT_SCREEN),
+    STRETCH("ESTIRAR", VideoScaleMode.FILL),
+    ORIGINAL("ORIGINAL", VideoScaleMode.ORIGINAL),
+    R16_9("16:9", VideoScaleMode.RATIO_16_9),
+    R4_3("4:3", VideoScaleMode.RATIO_4_3),
+    R16_10("16:10", VideoScaleMode.RATIO_16_10),
+    R221_1("2.21:1", VideoScaleMode.RATIO_221_1),
+    R235_1("2.35:1", VideoScaleMode.RATIO_235_1),
+    R239_1("2.39:1", VideoScaleMode.RATIO_239_1),
+    R5_4("5:4", VideoScaleMode.RATIO_5_4)
 }
 
 /** Aviso efímero en el centro de la pantalla durante un gesto. */
@@ -137,6 +142,9 @@ fun PlayerScreen(
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
     val emptyDiagnostics = remember { MutableStateFlow(PlaybackDiagnostics()) }
     val diagnostics by (controls?.diagnostics ?: emptyDiagnostics).collectAsStateWithLifecycle()
+    val emptyOutputReady = remember { MutableStateFlow(false) }
+    val videoOutputReady by (controls?.videoOutputReady ?: emptyOutputReady)
+        .collectAsStateWithLifecycle()
     val entry by PlaybackHub.currentEntry.collectAsStateWithLifecycle()
     val audioOnly by PlaybackHub.audioOnly.collectAsStateWithLifecycle()
     val repeat by PlaybackHub.repeat.collectAsStateWithLifecycle()
@@ -147,7 +155,6 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
     var preset by remember { mutableStateOf(AspectPreset.FIT) }
-    var userZoom by remember { mutableStateOf(1f) }
     var feedback by remember { mutableStateOf<Feedback?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf<Panel?>(null) }
@@ -238,10 +245,14 @@ fun PlayerScreen(
         VideoSurface(
             audioOnly = audioOnly,
             preset = preset,
-            userZoom = userZoom,
-            videoAspect = uiState.aspectRatio,
             modifier = Modifier.fillMaxSize()
         )
+
+        if (!audioOnly && !videoOutputReady) {
+            VideoStartupOverlay(
+                recovering = diagnostics.health == PlaybackHealth.RECOVERING
+            )
+        }
 
         secondarySubtitle?.let { document ->
             SecondarySubtitleOverlay(
@@ -293,9 +304,6 @@ fun PlayerScreen(
                 onVolume = { delta ->
                     val level = adjustVolume(context, delta)
                     feedback = Feedback("VOLUMEN", level, System.nanoTime())
-                },
-                onZoom = { factor ->
-                    userZoom = (userZoom * factor).coerceIn(0.5f, 3f)
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -522,9 +530,6 @@ fun PlayerScreen(
                 currentPreset = preset,
                 onSelectAspect = { chosen ->
                     preset = chosen
-                    // Un preset nuevo parte de cero: mezclar zoom manual y encaje
-                    // automático es la receta para no volver a encuadrar bien.
-                    userZoom = 1f
                     panel = null
                     feedback = Feedback(chosen.label, null, System.nanoTime())
                 }
@@ -574,16 +579,14 @@ private val SUBTITLE_MIME_TYPES = arrayOf(
 )
 
 /**
- * Superficie de vídeo. [AspectRatioFrameLayout] conserva el encuadre elegido y dentro se
- * monta la única salida disponible, [org.videolan.libvlc.util.VLCVideoLayout].
+ * Superficie estable a tamaño de ventana. VLC es la única autoridad de encaje y relación:
+ * intentar escalar un SurfaceView desde Compose desplaza la imagen porque vive en otra capa.
  */
 @SuppressLint("UnsafeOptInUsageError")
 @Composable
 private fun VideoSurface(
     audioOnly: Boolean,
     preset: AspectPreset,
-    userZoom: Float,
-    videoAspect: Float,
     modifier: Modifier = Modifier
 ) {
     val controls by PlaybackHub.controls.collectAsStateWithLifecycle()
@@ -606,26 +609,40 @@ private fun VideoSurface(
     if (audioOnly) return
 
     AndroidView(
-        factory = { ctx -> AspectRatioFrameLayout(ctx) },
+        factory = { ctx -> FrameLayout(ctx) },
         update = { view ->
             val engine = controls
+            engine?.setVideoScale(preset.scaleMode)
             if (attachedTo[0] !== engine) {
                 engine?.attachVideoOutput(view)
                 attachedTo[0] = engine
             }
-            view.setAspectRatio(preset.forcedRatio ?: videoAspect)
-            view.resizeMode = when (preset) {
-                AspectPreset.CROP -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                AspectPreset.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-                else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-            }
         },
-        // El zoom por pellizco se aplica encima del modo de encaje, no en su lugar.
-        modifier = modifier.graphicsLayer {
-            scaleX = userZoom
-            scaleY = userZoom
-        }
+        modifier = modifier
     )
+}
+
+@Composable
+private fun VideoStartupOverlay(recovering: Boolean) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(
+                color = VortexPalette.Neon,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(34.dp)
+            )
+            Text(
+                text = if (recovering) "RECONECTANDO IMAGEN" else "PREPARANDO VÍDEO",
+                style = MaterialTheme.typography.labelSmall,
+                color = VortexPalette.TextLow,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+        }
+
+    }
 }
 
 /** Fondo del modo solo-audio: sin superficie de vídeo, sólo la marca latiendo. */
@@ -674,7 +691,6 @@ private fun GestureLayer(
     onSeekDrag: (Long, Boolean) -> Unit,
     onBrightness: (Float) -> Unit,
     onVolume: (Float) -> Unit,
-    onZoom: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var dragAxis by remember { mutableStateOf(DragAxis.NONE) }

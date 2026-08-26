@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -240,12 +241,20 @@ fun ControlsOverlay(
                     .clickable(onClick = onPlayPause),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                    tint = VortexPalette.Neon,
-                    modifier = Modifier.size(38.dp)
-                )
+                if (isBuffering) {
+                    CircularProgressIndicator(
+                        color = VortexPalette.Neon,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(34.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                        tint = VortexPalette.Neon,
+                        modifier = Modifier.size(38.dp)
+                    )
+                }
             }
             IconButton(onClick = onNext) {
                 Icon(

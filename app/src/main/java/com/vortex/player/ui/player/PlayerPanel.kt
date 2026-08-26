@@ -574,7 +574,7 @@ private fun DelayControl(label: String, valueMs: Long, onDelta: (Long) -> Unit) 
 }
 
 /**
- * Selector de aspecto al estilo VLC. Los tres modos de encaje van arriba y las
+ * Selector de aspecto al estilo VLC. Los modos de encaje van arriba y las
  * relaciones forzadas debajo, porque son el recurso para cuando el vídeo trae mal los
  * metadatos y ningún encaje automático lo cuadra.
  */
@@ -583,14 +583,30 @@ private fun AspectOptions(
     current: AspectPreset,
     onSelect: (AspectPreset) -> Unit
 ) {
-    val modes = listOf(AspectPreset.FIT, AspectPreset.CROP, AspectPreset.STRETCH)
+    val modes = listOf(
+        AspectPreset.FIT,
+        AspectPreset.CROP,
+        AspectPreset.STRETCH,
+        AspectPreset.ORIGINAL
+    )
     val ratios = AspectPreset.entries - modes.toSet()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        modes.forEach { mode ->
+        modes.take(2).forEach { mode ->
+            OptionChip(
+                label = mode.label,
+                tint = if (mode == current) VortexPalette.Neon else VortexPalette.TextHigh
+            ) { onSelect(mode) }
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        modes.drop(2).forEach { mode ->
             OptionChip(
                 label = mode.label,
                 tint = if (mode == current) VortexPalette.Neon else VortexPalette.TextHigh
@@ -618,7 +634,18 @@ private fun AspectOptions(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        ratios.drop(3).forEach { ratio ->
+        ratios.drop(3).take(3).forEach { ratio ->
+            OptionChip(
+                label = ratio.label,
+                tint = if (ratio == current) VortexPalette.Neon else VortexPalette.TextHigh
+            ) { onSelect(ratio) }
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ratios.drop(6).forEach { ratio ->
             OptionChip(
                 label = ratio.label,
                 tint = if (ratio == current) VortexPalette.Neon else VortexPalette.TextHigh
@@ -626,7 +653,7 @@ private fun AspectOptions(
         }
     }
     Text(
-        text = "Consejo: con dos dedos puedes acercar o alejar sobre cualquier preset.",
+        text = "Ajustar conserva el cuadro completo; Llenar ocupa la ventana recortando los bordes.",
         style = MaterialTheme.typography.bodySmall,
         color = VortexPalette.TextLow,
         modifier = Modifier.padding(top = 14.dp)
