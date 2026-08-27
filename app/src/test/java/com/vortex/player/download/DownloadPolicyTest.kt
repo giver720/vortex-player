@@ -37,6 +37,7 @@ class DownloadPolicyTest {
             )
         )
         assertFalse(DownloadRetryPolicy.isRetryable(YoutubeAutomation.RECOVERY_FAILED))
+        assertFalse(DownloadRetryPolicy.isRetryable(YoutubeAutomation.AUTH_RECOVERY_FAILED))
         assertTrue(DownloadRetryPolicy.isRetryable("HTTP Error 503"))
         assertTrue(
             DownloadRetryPolicy.isFormatFailure("Requested format is not available")

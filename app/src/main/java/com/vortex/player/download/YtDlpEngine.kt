@@ -227,6 +227,7 @@ object YtDlpEngine {
         rateLimitKbps: Int = 0,
         onProgress: (Float, Long, String) -> Unit
     ): YoutubeDLResponse = withContext(Dispatchers.IO) {
+        val authenticated = YoutubeAuthStore.cookieFileOrNull(context) != null
         fun buildRequest(publicFallback: Boolean) =
             YoutubeDLRequest(sourceOverride ?: request.url).apply {
             applyYoutubeAutomation(context, publicFallback)
@@ -347,7 +348,13 @@ object YtDlpEngine {
             fallbackBlocked ||
             YoutubeAutomation.isBotChallenge(fallback.exceptionOrNull()?.message.orEmpty())
         ) {
-            throw IllegalStateException(YoutubeAutomation.RECOVERY_FAILED)
+            throw IllegalStateException(
+                if (authenticated) {
+                    YoutubeAutomation.AUTH_RECOVERY_FAILED
+                } else {
+                    YoutubeAutomation.RECOVERY_FAILED
+                }
+            )
         }
         fallback.getOrThrow()
     }
@@ -356,13 +363,22 @@ object YtDlpEngine {
         context: Context,
         publicFallback: Boolean
     ) {
+        val cookieFile = YoutubeAuthStore.cookieFileOrNull(context)
+        cookieFile?.let { addOption("--cookies", it.absolutePath) }
         if (YoutubeAutomation.supportsEjs(versionOrUnknown(context))) {
             YoutubeAutomation.quickJsExecutable(context.applicationInfo.nativeLibraryDir)
                 ?.let { path -> addOption("--js-runtimes", "quickjs:$path") }
             addOption("--remote-components", YoutubeAutomation.EJS_COMPONENT)
         }
         if (publicFallback) {
-            addOption("--extractor-args", YoutubeAutomation.PUBLIC_CLIENT_ARGUMENT)
+            addOption(
+                "--extractor-args",
+                if (cookieFile != null) {
+                    YoutubeAutomation.AUTHENTICATED_CLIENT_ARGUMENT
+                } else {
+                    YoutubeAutomation.PUBLIC_CLIENT_ARGUMENT
+                }
+            )
         }
     }
 

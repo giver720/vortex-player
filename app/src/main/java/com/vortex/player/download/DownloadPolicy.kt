@@ -61,7 +61,8 @@ object DownloadRetryPolicy {
             "copyright", "members-only", "age-restricted", "unsupported url",
             "libera espacio", "sólo quedan", "margen de seguridad", "destino no",
             "confirm you're not a bot", "confirm you’re not a bot", "use --cookies",
-            "modo automático sin cuenta", "known to use drm protection", "drm protected"
+            "modo automático sin cuenta", "known to use drm protection", "drm protected",
+            "vuelve a conectar tu cuenta de youtube"
         )
         return permanent.none(value::contains)
     }

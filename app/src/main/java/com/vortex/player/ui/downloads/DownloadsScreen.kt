@@ -1,5 +1,10 @@
 package com.vortex.player.ui.downloads
 
+import android.app.Activity
+import android.content.Intent
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -94,6 +99,7 @@ import com.vortex.player.download.SponsorMode
 import com.vortex.player.download.SponsorSettings
 import com.vortex.player.download.VideoContainer
 import com.vortex.player.download.VideoQuality
+import com.vortex.player.download.YoutubeAuthStore
 import com.vortex.player.ui.common.formatDuration
 import com.vortex.player.ui.theme.VortexPalette
 import com.vortex.player.ui.theme.VortexShapes
@@ -119,6 +125,13 @@ fun DownloadsScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val youtubeLoginLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.retryAllFailed()
+        }
+    }
 
     val url by viewModel.url.collectAsStateWithLifecycle()
     val kind by viewModel.kind.collectAsStateWithLifecycle()
@@ -202,6 +215,14 @@ fun DownloadsScreen(
     val failed = remember(downloads) {
         downloads.filter {
             it.status == DownloadStatus.FAILED || it.status == DownloadStatus.CANCELLED
+        }
+    }
+    val youtubeAuthBlocked = remember(failed) {
+        failed.any { job ->
+            job.errorMessage?.let { message ->
+                message.contains("YouTube exige verificación", ignoreCase = true) ||
+                    message.contains("YouTube rechazó la sesión", ignoreCase = true)
+            } == true
         }
     }
     val sectionJobs = when (queueFilter) {
@@ -293,6 +314,20 @@ fun DownloadsScreen(
 
             item {
                 EngineBanner(engineReady)
+            }
+
+            if (youtubeAuthBlocked) {
+                item {
+                    YoutubeAuthenticationNotice(
+                        connected = YoutubeAuthStore.hasSession(context),
+                        onConnect = {
+                            youtubeLoginLauncher.launch(
+                                Intent(context, YoutubeLoginActivity::class.java)
+                            )
+                        },
+                        onDisconnect = { YoutubeAuthStore.clear(context) }
+                    )
+                }
             }
 
             item {
@@ -1076,6 +1111,59 @@ private fun EngineBanner(engineReady: Boolean?) {
         color = color,
         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
     )
+}
+
+@Composable
+private fun YoutubeAuthenticationNotice(
+    connected: Boolean,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(VortexPalette.GraphiteRaised, VortexShapes.medium)
+            .border(0.5.dp, VortexPalette.Magenta.copy(alpha = 0.55f), VortexShapes.medium)
+            .padding(12.dp)
+    ) {
+        Text(
+            text = if (connected) "SESIÓN DE YOUTUBE GUARDADA" else "YOUTUBE PIDE VERIFICACIÓN",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (connected) VortexPalette.Neon else VortexPalette.Magenta
+        )
+        Text(
+            text = if (connected) {
+                "Reintenta las fallidas. Si vuelve a bloquearlas, renueva la sesión."
+            } else {
+                "Conecta tu cuenta una sola vez dentro de Vortex. No tendrás que importar cookies ni archivos TXT."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = VortexPalette.TextMid,
+            modifier = Modifier.padding(top = 5.dp, bottom = 9.dp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = if (connected) "RENOVAR SESIÓN" else "CONECTAR YOUTUBE",
+                style = MaterialTheme.typography.labelLarge,
+                color = VortexPalette.Graphite,
+                modifier = Modifier
+                    .background(VortexPalette.Neon, VortexShapes.small)
+                    .clickable(onClick = onConnect)
+                    .padding(horizontal = 11.dp, vertical = 8.dp)
+            )
+            if (connected) {
+                Text(
+                    text = "DESCONECTAR",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = VortexPalette.TextLow,
+                    modifier = Modifier
+                        .clickable(onClick = onDisconnect)
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
 }
 
 @Composable

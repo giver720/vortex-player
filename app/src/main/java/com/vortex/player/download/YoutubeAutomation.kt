@@ -8,9 +8,13 @@ object YoutubeAutomation {
     // android_vr dejó de ser un cliente predeterminado en yt-dlp 2026.08.19. Los clientes
     // embebido y visionOS son los fallbacks públicos vigentes y no necesitan cookies.
     const val PUBLIC_CLIENT_ARGUMENT = "youtube:player_client=web_embedded,visionos"
+    const val AUTHENTICATED_CLIENT_ARGUMENT =
+        "youtube:player_client=tv_downgraded,web_embedded"
     const val RECOVERY_STATUS = "YouTube pidió verificación · probando modo automático…"
     const val RECOVERY_FAILED =
         "ERROR: YouTube exige verificación para este vídeo; el modo automático sin cuenta también fue bloqueado"
+    const val AUTH_RECOVERY_FAILED =
+        "ERROR: YouTube rechazó la sesión guardada; vuelve a conectar tu cuenta de YouTube"
 
     fun quickJsExecutable(nativeLibraryDir: String): String? =
         File(nativeLibraryDir, "libqjs.so")
