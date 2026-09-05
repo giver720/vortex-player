@@ -2,6 +2,8 @@ package com.vortex.player.spotify
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -47,7 +49,7 @@ object SpotifyWebApi {
         offset: Int = 0,
         limit: Int = 50
     ): Result<SpotifyLibraryPage<SpotifyLibraryPlaylist>> = withContext(Dispatchers.IO) {
-        runCatching {
+        spotifyResult {
             val token = SpotifyAuth.accessToken(context)
                 ?: throw IllegalStateException(tokenUnavailableMessage())
             val safeLimit = limit.coerceIn(1, 50)
@@ -83,12 +85,11 @@ object SpotifyWebApi {
                 }
             }
             val total = json.optInt("total", items.size)
-            val hasMore = !json.isNull("next") && json.optString("next").isNotBlank()
             SpotifyLibraryPage(
                 items = items,
                 offset = safeOffset,
                 total = total,
-                nextOffset = if (hasMore) safeOffset + json.optInt("limit", safeLimit) else null
+                nextOffset = SpotifyPageCursor.nextOffset(json, safeOffset)
             )
         }
     }
@@ -99,7 +100,7 @@ object SpotifyWebApi {
         offset: Int = 0,
         limit: Int = 50
     ): Result<SpotifyLibraryPage<SpotifyLibraryTrack>> = withContext(Dispatchers.IO) {
-        runCatching {
+        spotifyResult {
             val token = SpotifyAuth.accessToken(context)
                 ?: throw IllegalStateException(tokenUnavailableMessage())
             val safeLimit = limit.coerceIn(1, 50)
@@ -117,7 +118,8 @@ object SpotifyWebApi {
                         val item = wrapper.optJSONObject("item")
                             ?: wrapper.optJSONObject("track")
                             ?: continue
-                        if (item.optString("type", "track") != "track") continue
+                        if (item.optString("type", "track") != "track" ||
+                            item.optBoolean("is_local") || wrapper.optBoolean("is_local")) continue
                         val artists = item.optJSONArray("artists")
                         val artist = buildList {
                             if (artists != null) {
@@ -149,45 +151,48 @@ object SpotifyWebApi {
                 }
             }
             val total = json.optInt("total", safeOffset + items.size)
-            val hasMore = !json.isNull("next") && json.optString("next").isNotBlank()
             SpotifyLibraryPage(
                 items = items,
                 offset = safeOffset,
                 total = total,
-                nextOffset = if (hasMore) safeOffset + json.optInt("limit", safeLimit) else null
+                nextOffset = SpotifyPageCursor.nextOffset(json, safeOffset)
             )
         }
     }
 
     private suspend fun getJson(url: String, accessToken: String): JSONObject {
-        repeat(2) { attempt ->
+        repeat(SpotifyRetryPolicy.MAX_ATTEMPTS) { attempt ->
+            currentCoroutineContext().ensureActive()
+            var retryDelay: Long? = null
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15_000
                 readTimeout = 20_000
+                instanceFollowRedirects = false
                 setRequestProperty("Authorization", "Bearer $accessToken")
                 setRequestProperty("Accept", "application/json")
             }
             try {
                 val status = connection.responseCode
-                if (status == 429 && attempt == 0) {
-                    val retrySeconds = connection.getHeaderField("Retry-After")
-                        ?.toLongOrNull()?.coerceIn(1L, 30L) ?: 2L
-                    delay(retrySeconds * 1_000L)
-                    return@repeat
+                currentCoroutineContext().ensureActive()
+                retryDelay = SpotifyRetryPolicy.delayMs(
+                    status, connection.getHeaderField("Retry-After"), attempt
+                )
+                if (retryDelay == null) {
+                    if (status !in 200..299) {
+                        throw IllegalStateException(SpotifyRetryPolicy.failureMessage(status))
+                    }
+                    val text = connection.inputStream.bufferedReader(StandardCharsets.UTF_8)
+                        .use { it.readText() }
+                    return JSONObject(text)
                 }
-                val text = (if (status in 200..299) connection.inputStream else connection.errorStream)
-                    ?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
-                if (status !in 200..299) {
-                    val reason = runCatching {
-                        JSONObject(text).optJSONObject("error")?.optString("message")
-                    }.getOrNull().orEmpty()
-                    throw IllegalStateException(reason.ifBlank { "Spotify respondió HTTP $status" })
-                }
-                return JSONObject(text)
+            } catch (network: java.io.IOException) {
+                retryDelay = SpotifyRetryPolicy.delayMs(-1, null, attempt) ?: throw network
             } finally {
                 connection.disconnect()
             }
+            // La conexión se libera antes de esperar, también al cancelar el trabajo.
+            retryDelay?.let { delay(it) }
         }
         throw IllegalStateException("Spotify limitó temporalmente las solicitudes")
     }

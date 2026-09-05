@@ -92,8 +92,11 @@ class SpotifyHubViewModel(app: Application) : AndroidViewModel(app) {
         if (_refreshing.value) return
         viewModelScope.launch {
             _refreshing.value = true
-            repository.syncPlaylists(id).onFailure { _error.value = it.userMessage() }
-            _refreshing.value = false
+            try {
+                repository.syncPlaylists(id).onFailure { _error.value = it.userMessage() }
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 
@@ -112,9 +115,12 @@ class SpotifyHubViewModel(app: Application) : AndroidViewModel(app) {
         if (_refreshing.value) return
         viewModelScope.launch {
             _refreshing.value = true
-            repository.syncPlaylistTracks(id, playlist)
-                .onFailure { _error.value = it.userMessage() }
-            _refreshing.value = false
+            try {
+                repository.syncPlaylistTracks(id, playlist)
+                    .onFailure { _error.value = it.userMessage() }
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
 

@@ -3,6 +3,8 @@ package com.vortex.player.spotify
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -21,7 +23,7 @@ import java.net.URL
  * Hay dos vías. La página pública de *embed* devuelve la lista al instante y sin
  * credenciales, pero **corta en 100 pistas y no pagina**. Para superar ese tope se
  * aprovecha que esa misma página trae un token de sesión anónima, con el que se puede
- * pedir la lista completa a la API pública de cien en cien. Ese token está limitado y
+ * pedir la lista completa a la API pública en páginas de hasta 50 entradas. Ese token está limitado y
  * responde 429 con frecuencia, así que la vía rápida es un extra, no la base: si falla,
  * se devuelven las 100 del embed marcadas como incompletas.
  */
@@ -113,7 +115,7 @@ object SpotifyResolver {
 
         // --- Canción suelta ---------------------------------------------------
         val trackList = entity.optJSONArray("trackList")
-        if (kind == SpotifyKind.TRACK || trackList == null || trackList.length() == 0) {
+        if (kind == SpotifyKind.TRACK) {
             val title = entity.optString("title").ifBlank { name }
             val track = SpotifyTrack(
                 id = entity.optString("id").takeIf { it.isNotBlank() } ?: id,
@@ -128,6 +130,17 @@ object SpotifyResolver {
             onPage?.invoke(null, listOf(track))
             return@withContext SpotifyResult.Ok(
                 SpotifyCollection(SpotifyKind.TRACK, title, cover, listOf(track), false, 1)
+            )
+        }
+
+        if (trackList == null) {
+            return@withContext SpotifyResult.Error(
+                "Spotify no expuso las canciones de esta colección. Comprueba su acceso o actualiza el motor."
+            )
+        }
+        if (trackList.length() == 0) {
+            return@withContext SpotifyResult.Ok(
+                SpotifyCollection(kind, name, cover, emptyList(), false, 0)
             )
         }
 
@@ -154,7 +167,7 @@ object SpotifyResolver {
                 // En cuanto la API entregó algo hay que quedarse con ello aunque se
                 // cortara a medias: esas canciones ya se emitieron por `onPage`, y caer
                 // al respaldo del embed las encolaría por segunda vez.
-                if (paged.tracks.isNotEmpty()) {
+                if (paged.tracks.isNotEmpty() || paged.complete) {
                     return@withContext SpotifyResult.Ok(
                         SpotifyCollection(
                             kind = kind,
@@ -183,20 +196,6 @@ object SpotifyResolver {
         )
     }
 
-    /** Lo obtenido de la API y si se llegó hasta el final de la lista. */
-    private class Paged(
-        val tracks: List<SpotifyTrack>,
-        val complete: Boolean,
-        val total: Int
-    )
-
-    /**
-     * Recorre la lista de cien en cien con el token del embed.
-     *
-     * Devuelve lo conseguido aunque se corte a mitad: el token es el de la sesión
-     * anónima del reproductor incrustado y Spotify lo limita, así que un 429 en la
-     * tercera página es un desenlace normal, no una excepción.
-     */
     private suspend fun fetchAllPages(
         kind: SpotifyKind,
         id: String,
@@ -204,72 +203,23 @@ object SpotifyResolver {
         collectionName: String,
         collectionCover: String?,
         onPage: (suspend (folder: String?, page: List<SpotifyTrack>) -> Unit)?
-    ): Paged {
-        val all = mutableListOf<SpotifyTrack>()
-        var offset = 0
-        var total = Int.MAX_VALUE
-        var declaredTotal = 0
-
-        while (offset < total) {
-            val url = when (kind) {
-                SpotifyKind.ALBUM ->
-                    "https://api.spotify.com/v1/albums/$id/tracks?limit=50&offset=$offset"
-                else ->
-                    "https://api.spotify.com/v1/playlists/$id/tracks" +
-                        "?limit=$PAGE&offset=$offset" +
-                        "&fields=total,items(track(name,duration_ms,track_number," +
-                        "artists(name),album(name,images)))"
+    ): SpotifyCatalogPages = SpotifyCatalogPager.load(
+        kind = kind,
+        name = collectionName,
+        cover = collectionCover,
+        fetch = { offset ->
+            val resource = if (kind == SpotifyKind.ALBUM) {
+                "albums/$id/tracks"
+            } else {
+                "playlists/$id/items"
             }
-
-            val page = fetch(url, token) ?: run {
-                Log.w(TAG, "La API cortó en offset=$offset; se usa lo obtenido hasta aquí")
-                return Paged(all, complete = false, total = declaredTotal)
-            }
-
-            val json = runCatching { JSONObject(page) }.getOrNull()
-                ?: return Paged(all, complete = false, total = declaredTotal)
-
-            total = json.optInt("total", 0).takeIf { it > 0 } ?: break
-            declaredTotal = total
-            val items = json.optJSONArray("items") ?: break
-            if (items.length() == 0) break
-
-            val batch = mutableListOf<SpotifyTrack>()
-            for (i in 0 until items.length()) {
-                val item = items.optJSONObject(i) ?: continue
-                // En playlists la canción viene anidada; en álbumes el elemento ya lo es.
-                val track = item.optJSONObject("track") ?: item
-                val title = track.optString("name")
-                if (title.isBlank()) continue
-
-                val album = track.optJSONObject("album")
-                batch += SpotifyTrack(
-                    id = track.optString("id").takeIf { it.isNotBlank() },
-                    title = title,
-                    artist = artistsOf(track),
-                    // Aquí sí llega el álbum de verdad, no el nombre de la lista.
-                    album = album?.optString("name")?.takeIf { it.isNotBlank() }
-                        ?: collectionName,
-                    durationMs = track.optLong("duration_ms"),
-                    coverUrl = album?.let { largestImage(it.optJSONArray("images")) }
-                        ?: collectionCover,
-                    trackNumber = all.size + batch.size + 1,
-                    totalTracks = total
-                )
-            }
-
-            if (batch.isEmpty()) break
-            all += batch
-            onPage?.invoke(collectionName, batch)
-            offset += items.length()
-        }
-
-        // Se considera completa si se alcanzó el total que declaró Spotify. Algunas
-        // listas tienen pistas retiradas del catálogo, que la API devuelve nulas y aquí
-        // se descartan, así que la cuenta puede quedar por debajo sin que falte nada.
-        val complete = declaredTotal > 0 && offset >= declaredTotal
-        return Paged(all, complete, declaredTotal)
-    }
+            val raw = fetch(
+                "https://api.spotify.com/v1/$resource?limit=$PAGE&offset=$offset", token
+            )
+            raw?.let { runCatching { JSONObject(it) }.getOrNull() }
+        },
+        onPage = onPage
+    )
 
     private fun parseEmbedTracks(
         trackList: JSONArray,
@@ -331,7 +281,7 @@ object SpotifyResolver {
     private data class HttpResponse(
         val status: Int,
         val body: String?,
-        val retryAfterSeconds: Long?
+        val retryAfter: String?
     )
 
     /**
@@ -339,20 +289,17 @@ object SpotifyResolver {
      * respuestas transitorias evita convertir una ráfaga breve en una lista incompleta.
      */
     private suspend fun fetch(url: String, bearer: String? = null): String? {
-        repeat(3) { attempt ->
+        repeat(SpotifyRetryPolicy.MAX_ATTEMPTS) { attempt ->
+            currentCoroutineContext().ensureActive()
             val response = fetchOnce(url, bearer)
+            currentCoroutineContext().ensureActive()
             if (response != null && response.status in 200..299) return response.body
 
             val status = response?.status ?: -1
-            val retryable = status == -1 || status == 429 || status in 500..504
-            if (!retryable || attempt == 2) {
-                Log.w(TAG, "HTTP $status en $url")
+            val waitMs = SpotifyRetryPolicy.delayMs(status, response?.retryAfter, attempt)
+            if (waitMs == null) {
+                Log.w(TAG, "HTTP $status al consultar Spotify")
                 return null
-            }
-            val waitMs = if (status == 429) {
-                ((response?.retryAfterSeconds ?: 1L) * 1000L).coerceIn(1_000L, 8_000L)
-            } else {
-                700L * (attempt + 1)
             }
             Log.w(TAG, "HTTP $status en Spotify; reintento ${attempt + 2}/3")
             delay(waitMs)
@@ -363,7 +310,7 @@ object SpotifyResolver {
     private fun fetchOnce(url: String, bearer: String? = null): HttpResponse? = runCatching {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            instanceFollowRedirects = true
+            instanceFollowRedirects = bearer == null
             connectTimeout = 12_000
             readTimeout = 15_000
             // Sin un User-Agent de navegador, Spotify devuelve una página vacía.
@@ -379,7 +326,7 @@ object SpotifyResolver {
             HttpResponse(
                 status = status,
                 body = body,
-                retryAfterSeconds = connection.getHeaderField("Retry-After")?.toLongOrNull()
+                retryAfter = connection.getHeaderField("Retry-After")
             )
         } finally {
             connection.disconnect()

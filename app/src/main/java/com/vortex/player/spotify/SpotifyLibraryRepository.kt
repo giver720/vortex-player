@@ -17,7 +17,7 @@ class SpotifyLibraryRepository private constructor(
     fun tracks(accountId: String, playlistId: String): Flow<List<SpotifyTrackEntity>> =
         dao.observeTracks(accountId, playlistId)
 
-    suspend fun syncPlaylists(accountId: String): Result<Int> = runCatching {
+    suspend fun syncPlaylists(accountId: String): Result<Int> = spotifyResult {
         val all = mutableListOf<SpotifyPlaylistEntity>()
         var offset = 0
         val updatedAt = System.currentTimeMillis()
@@ -37,14 +37,15 @@ class SpotifyLibraryRepository private constructor(
                 )
             }
             val next = page.nextOffset
-            offset = next?.takeIf { it > offset } ?: -1
+            check(next == null || next > offset) { "Spotify devolvió una página repetida" }
+            offset = next ?: -1
         } while (offset >= 0)
         dao.replacePlaylists(accountId, all)
         all.size
     }
 
     suspend fun syncPlaylistTracks(accountId: String, playlistId: String): Result<Int> =
-        runCatching {
+        spotifyResult {
             val all = mutableListOf<SpotifyTrackEntity>()
             var offset = 0
             do {
@@ -65,7 +66,8 @@ class SpotifyLibraryRepository private constructor(
                     )
                 }
                 val next = page.nextOffset
-                offset = next?.takeIf { it > offset } ?: -1
+                check(next == null || next > offset) { "Spotify devolvió una página repetida" }
+                offset = next ?: -1
             } while (offset >= 0)
             dao.replaceTracks(accountId, playlistId, all)
             all.size
